@@ -6,6 +6,20 @@ from backend.db import get_connection
 
 app = FastAPI()
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+        # we'll add your Netlify URL later
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 ALLOWED_SORT = {"tx_date", "tx_estimate", "ticker", "full_name", "side"}
 ALLOWED_ORDER = {"asc", "desc"}
 
