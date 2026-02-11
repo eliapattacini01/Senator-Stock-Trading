@@ -1,0 +1,127 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 40px;
+}
+
+.filters {
+    margin-bottom: 20px;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+th, td {
+    border: 1px solid #ccc;
+    padding: 8px;
+}
+
+th {
+    background: #f0f0f0;
+}
+.loading {
+  margin: 10px 0;
+  font-weight: bold;
+}
+
+.status {
+  margin: 10px 0;
+  color: #b00020; /* error-ish */
+}
+/* Optional: small tweaks on top of Bootstrap */
+#transactionsTable td:nth-child(5) {
+  font-variant-numeric: tabular-nums;
+}
+/* Dark dashboard polish */
+body {
+  background-color: #0f1115;
+}
+
+.card {
+  background-color: #161a22;
+}
+
+.table {
+  --bs-table-bg: #161a22;
+}
+
+.table thead {
+  --bs-table-bg: #1f2430;
+}
+
+input, select {
+  background-color: #0f1115 !important;
+  color: #e5e7eb !important;
+}
+
+input::placeholder {
+  color: #9ca3af;
+}
+.ts-control,
+.ts-dropdown {
+  background-color: #111 !important;
+  color: #eee;
+  border-color: #333;
+}
+
+.ts-dropdown .option.active {
+  background-color: #222;
+}
+
+.ts-control input {
+  color: #eee;
+}
+.ts-control {
+  background-color: #0f1115 !important;
+  color: #e5e7eb !important;
+  border: 1px solid #2a2f3a !important;
+}
+
+/* Text inside input */
+.ts-control input {
+  color: #e5e7eb !important;
+}
+
+/* Placeholder text */
+.ts-control::placeholder,
+.ts-control input::placeholder {
+  color: #9ca3af !important;
+}
+
+/* Dropdown container */
+.ts-dropdown {
+  background-color: #0f1115 !important;
+  color: #e5e7eb !important;
+  border: 1px solid #2a2f3a !important;
+
+  /* 🔑 THIS fixes the "behind table" problem */
+  z-index: 9999 !important;
+}
+
+/* Dropdown options */
+.ts-dropdown .option {
+  color: #e5e7eb !important;
+  background-color: #0f1115 !important;
+}
+
+/* Hovered / active option */
+.ts-dropdown .option.active,
+.ts-dropdown .option:hover {
+  background-color: #1f2937 !important;
+  color: #ffffff !important;
+}
+
+/* Selected item (if shown) */
+.ts-control .item {
+  color: #ffffff !important;
+}
+
+/* Scrollbar (optional, nicer look) */
+.ts-dropdown::-webkit-scrollbar {
+  width: 8px;
+}
+.ts-dropdown::-webkit-scrollbar-thumb {
+  background-color: #374151;
+  border-radius: 4px;
+}
