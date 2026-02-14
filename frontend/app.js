@@ -1,5 +1,6 @@
 
 const API_BASE = window.API_BASE;
+
 function getQS() {
   return new URLSearchParams(window.location.search);
 }
