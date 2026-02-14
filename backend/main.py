@@ -1,19 +1,20 @@
+import os
 from dotenv import load_dotenv
+from fastapi import FastAPI, Query, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+
 load_dotenv()
 
-from fastapi import FastAPI, Query, HTTPException
-from backend.db import get_connection
+from backend.db import get_connection  # ok dopo load_dotenv
 
 app = FastAPI()
 
-from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://127.0.0.1:5500",
         "http://localhost:5500",
-        # we'll add your Netlify URL later
     ],
     allow_credentials=True,
     allow_methods=["*"],

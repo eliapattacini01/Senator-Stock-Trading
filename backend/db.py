@@ -1,10 +1,9 @@
-import psycopg
+# backend/db.py
 import os
-from dotenv import load_dotenv
+import psycopg
 
-load_dotenv()  # loads backend/.env if present
 def get_connection():
-    return psycopg.connect(
-        os.environ["DATABASE_URL"]
-    )
-
+    db_url = os.getenv("DATABASE_URL")
+    if not db_url:
+        raise RuntimeError("DATABASE_URL is not set (Render: add it in Environment).")
+    return psycopg.connect(db_url)
