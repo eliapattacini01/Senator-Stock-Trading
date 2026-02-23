@@ -19,13 +19,39 @@
 </nav>
 
 <main class="container my-4">
-
   <div id="status" class="alert alert-danger d-none"></div>
 
   <div id="loading" class="d-none mb-3">
     <div class="d-flex align-items-center gap-2">
       <div class="spinner-border" role="status" aria-label="Loading"></div>
       <div class="fw-semibold">Loading…</div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-12 col-md-4">
+      <div class="card summary-card">
+        <div class="card-body">
+          <div class="summary-label">Months in range</div>
+          <div id="monthsValue" class="summary-value">—</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card summary-card">
+        <div class="card-body">
+          <div class="summary-label">Peak BUY senators</div>
+          <div id="peakBuyValue" class="summary-value">—</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-md-4">
+      <div class="card summary-card">
+        <div class="card-body">
+          <div class="summary-label">Peak SELL senators</div>
+          <div id="peakSellValue" class="summary-value">—</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -37,7 +63,7 @@
           <select id="tickerSelect" class="form-select"></select>
         </div>
 
-        <div class="col-12 col-md-3">
+        <div class="col-12 col-md-2">
           <label class="form-label">Mode</label>
           <select id="modeSelect" class="form-select">
             <option value="both">BUY + SELL</option>
@@ -46,19 +72,31 @@
           </select>
         </div>
 
-        <div class="col-12 col-md-3 d-grid">
+        <div class="col-12 col-md-2">
+          <label class="form-label">Smooth line</label>
+          <select id="smoothSelect" class="form-select">
+            <option value="on" selected>On</option>
+            <option value="off">Off</option>
+          </select>
+        </div>
+
+        <div class="col-12 col-md-2 d-grid">
           <button id="loadBtn" class="btn btn-primary">Load chart</button>
         </div>
       </div>
     </div>
   </div>
 
-  <div class="card shadow-sm">
+  <div class="card shadow-sm mb-3">
     <div class="card-body">
       <canvas id="tsChart" height="120"></canvas>
     </div>
   </div>
+
   <div class="card shadow-sm">
+    <div class="card-header small text-secondary">
+      Recent transactions for selected ticker/mode (max 200 rows)
+    </div>
     <div class="card-body p-0">
       <div class="table-responsive">
         <table id="transactionsTable" class="table table-striped table-hover mb-0 align-middle">
@@ -77,6 +115,7 @@
     </div>
   </div>
 </main>
+
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="timeseries.js"></script>
