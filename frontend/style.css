@@ -68,6 +68,16 @@ th {
   --bs-table-bg: #1f2430;
 }
 
+.chart-card-body {
+  height: 460px;
+}
+
+@media (max-width: 768px) {
+  .chart-card-body {
+    height: 360px;
+  }
+}
+
 input,
 select {
   background-color: #0f1115 !important;
