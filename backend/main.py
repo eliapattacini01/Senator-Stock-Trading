@@ -10,13 +10,23 @@ from backend.db import get_connection  # ok dopo load_dotenv
 app = FastAPI()
 
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
+def get_allowed_origins() -> list[str]:
+    env_origins = os.getenv("ALLOWED_ORIGINS", "")
+    parsed = [origin.strip() for origin in env_origins.split(",") if origin.strip()]
+    if parsed:
+        return parsed
+
+    # Local defaults for development.
+    return [
         "http://127.0.0.1:5500",
         "http://localhost:5500",
         "https://senator-stock-trading-1.onrender.com",
-    ],
+    ]
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,6 +34,36 @@ app.add_middleware(
 
 ALLOWED_SORT = {"tx_date", "tx_estimate", "ticker", "full_name", "side"}
 ALLOWED_ORDER = {"asc", "desc"}
+
+
+def build_transaction_filters(
+    senator: str | None,
+    side: str | None,
+    ticker: str | None,
+) -> tuple[str, list[str]]:
+    clauses: list[str] = []
+    params: list[str] = []
+
+    if senator:
+        clauses.append("full_name = %s")
+        params.append(senator)
+    if side:
+        clauses.append("side = %s")
+        params.append(side)
+    if ticker:
+        clauses.append("ticker = %s")
+        params.append(ticker)
+
+    where_sql = ""
+    if clauses:
+        where_sql = " AND " + " AND ".join(clauses)
+
+    return where_sql, params
+
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
 
 @app.get("/transactions")
 def get_transactions(
@@ -52,19 +92,8 @@ def get_transactions(
             FROM transactions
             WHERE 1=1
         """
-        params = []
-
-        if senator:
-            sql += " AND full_name = %s"
-            params.append(senator)
-
-        if side:
-            sql += " AND side = %s"
-            params.append(side)
-
-        if ticker:
-            sql += " AND ticker = %s"
-            params.append(ticker)
+        filters_sql, params = build_transaction_filters(senator, side, ticker)
+        sql += filters_sql
 
         # Safe because sort/order are validated from allow-lists
         sql += f" ORDER BY {sort} {order}"
@@ -88,7 +117,7 @@ def get_transactions(
         conn.close()
 
 @app.get("/senators")
-def get_senators(limit: int = 200):
+def get_senators(limit: int = Query(200, ge=1, le=2000)):
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -106,16 +135,6 @@ def get_senators(limit: int = 200):
     finally:
         conn.close()
 
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # later restrict
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 @app.get("/transactions/count")
 def count_transactions(
     senator: str | None = None,
@@ -127,17 +146,8 @@ def count_transactions(
         cur = conn.cursor()
 
         sql = "SELECT COUNT(*) FROM transactions WHERE 1=1"
-        params = []
-
-        if senator:
-            sql += " AND full_name = %s"
-            params.append(senator)
-        if side:
-            sql += " AND side = %s"
-            params.append(side)
-        if ticker:
-            sql += " AND ticker = %s"
-            params.append(ticker)
+        filters_sql, params = build_transaction_filters(senator, side, ticker)
+        sql += filters_sql
 
         cur.execute(sql, params)
         total = cur.fetchone()[0]
@@ -301,7 +311,7 @@ def monthly_timeseries(
         conn.close()
 
 @app.get("/tickers")
-def get_tickers(limit: int = 5000):
+def get_tickers(limit: int = Query(5000, ge=1, le=10000)):
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -316,16 +326,3 @@ def get_tickers(limit: int = 5000):
         return [{"ticker": r[0]} for r in rows]
     finally:
         conn.close()
-from fastapi.middleware.cors import CORSMiddleware
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5500",
-        "http://127.0.0.1:5500",
-        # add your deployed frontend URL later, e.g. "https://your-site.netlify.app"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
