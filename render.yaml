@@ -1,0 +1,50 @@
+services:
+  # ── Web API ────────────────────────────────────────────────────────────────
+  - type: web
+    name: congress-trades-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # set manually in Render dashboard
+      - key: RENDER
+        value: true          # disables APScheduler (cron jobs handle it)
+
+  # ── Cron Jobs ──────────────────────────────────────────────────────────────
+  # Times are UTC. ET = UTC-5 (winter) / UTC-4 (summer).
+  # These run even when the web service is sleeping.
+
+  - type: cron
+    name: senate-scraper
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python crons/senate_scrape.py
+    schedule: "0 7 * * *"   # 02:00 ET (winter)
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+
+  - type: cron
+    name: house-scraper
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python crons/house_scrape.py
+    schedule: "0 8 * * *"   # 03:00 ET (winter)
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+
+  - type: cron
+    name: quiverquant-scraper
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python crons/quiverquant_scrape.py
+    schedule: "30 8 * * *"  # 03:30 ET (winter)
+    envVars:
+      - key: DATABASE_URL
+        sync: false

@@ -3,3 +3,6 @@ uvicorn[standard]
 gunicorn
 psycopg[binary]
 python-dotenv
+apscheduler
+yfinance
+pdfplumber
