@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Portfolio — CongressTrades</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js" defer></script>
+</head>
+<body>
+
+<!-- ── Navbar ─────────────────────────────────────────────────────────────── -->
+<nav class="navbar navbar-expand-lg">
+  <div class="container">
+    <a class="navbar-brand" href="leaderboard.html">Congress<span>Trades</span></a>
+    <div class="d-flex gap-1">
+      <a class="nav-link" href="leaderboard.html">Leaderboard</a>
+      <a class="nav-link" href="index.html">Transactions</a>
+      <a class="nav-link" href="timeseries.html">Time Series</a>
+      <a class="nav-link" href="monthlychar.html">Bar Chart</a>
+      <a class="nav-link active" href="portfolio.html">Portfolio</a>
+    </div>
+  </div>
+</nav>
+
+<main class="container my-4">
+
+  <!-- Status / Error -->
+  <div id="status" class="alert alert-danger d-none mb-3" role="alert"></div>
+
+  <!-- Loading -->
+  <div id="loading" class="d-none mb-3">
+    <div class="d-flex align-items-center gap-2">
+      <div class="spinner-border" role="status"></div>
+      <span class="small text-secondary">Loading portfolio…</span>
+    </div>
+  </div>
+
+  <!-- ── Member selector ───────────────────────────────────────────────── -->
+  <div class="card shadow-sm mb-4">
+    <div class="card-body">
+      <div class="row g-3 align-items-end">
+        <div class="col-12 col-md-6">
+          <label class="form-label">Select Member</label>
+          <select id="memberSelect" placeholder="Search member…"></select>
+        </div>
+        <div class="col-12 col-md-3">
+          <label class="form-label">Chamber</label>
+          <select id="chamberFilter" class="form-select">
+            <option value="">All</option>
+            <option value="Senate">Senate</option>
+            <option value="House">House</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-3 d-grid">
+          <button id="loadPortfolioBtn" class="btn btn-primary">Load Portfolio</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Summary cards (hidden until loaded) ───────────────────────────── -->
+  <div id="summarySection" class="d-none">
+    <div class="d-flex align-items-center gap-3 mb-3">
+      <h5 id="memberTitle" class="mb-0 fw-bold"></h5>
+      <span id="memberChamberBadge"></span>
+    </div>
+
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="stat-card info">
+          <div class="stat-label">Unique Tickers</div>
+          <div class="stat-value" id="sumTickers">—</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card buy">
+          <div class="stat-label">Est. Total Bought</div>
+          <div class="stat-value" id="sumBought">—</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card sell">
+          <div class="stat-label">Est. Total Sold</div>
+          <div class="stat-value" id="sumSold">—</div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="stat-card info">
+          <div class="stat-label">Net Gain</div>
+          <div class="stat-value" id="sumNet">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Performance chart (full width) ───────────────────────────── -->
+    <div class="card shadow-sm mb-4" id="perfCard">
+      <div class="card-body">
+
+        <!-- Top row: big return + SPY comparison -->
+        <div class="d-flex justify-content-between align-items-start mb-1">
+          <div>
+            <div class="perf-label">Portfolio Return</div>
+            <div class="d-flex align-items-baseline gap-2 mt-1">
+              <span class="perf-return" id="perfTotalReturn">—</span>
+              <span class="perf-window text-secondary" id="perfWindowLabel"></span>
+            </div>
+          </div>
+          <div class="text-end">
+            <div class="perf-label">vs S&amp;P 500</div>
+            <div class="perf-spy mt-1">
+              <span id="perfSpyReturn" class="text-secondary fw-semibold">—</span>
+              <span class="text-secondary small ms-1">SPY</span>
+            </div>
+            <div class="text-secondary" style="font-size:0.72rem;" id="perfDateRange"></div>
+          </div>
+        </div>
+
+        <!-- Chart -->
+        <div class="perf-chart-wrap">
+          <div id="perfLoading" class="d-flex align-items-center gap-2 py-4">
+            <div class="spinner-border spinner-border-sm" role="status"></div>
+            <span class="text-secondary small">Computing portfolio performance…</span>
+          </div>
+          <div id="perfNoData" class="d-none text-secondary small py-4">
+            Not enough price data to compute performance for this member.
+          </div>
+          <canvas id="perfChart" class="d-none"></canvas>
+        </div>
+
+        <!-- Period selector buttons -->
+        <div class="perf-periods" id="perfPeriods">
+          <button class="period-btn" data-period="1D">1D</button>
+          <button class="period-btn" data-period="7D">1W</button>
+          <button class="period-btn" data-period="1M">1M</button>
+          <button class="period-btn" data-period="1Y">1Y</button>
+          <button class="period-btn" data-period="5Y">5Y</button>
+          <button class="period-btn active" data-period="MAX">Max</button>
+        </div>
+
+        <!-- Bottom stats row -->
+        <div class="perf-stats-row" id="perfStatsRow">
+          <div class="perf-stat">
+            <div class="perf-stat-label">CAGR</div>
+            <div class="perf-stat-val" id="perfCagr">—</div>
+          </div>
+          <div class="perf-stat">
+            <div class="perf-stat-label">SPY CAGR</div>
+            <div class="perf-stat-val text-secondary" id="perfSpyCagr">—</div>
+          </div>
+          <div class="perf-stat">
+            <div class="perf-stat-label">Transactions Priced</div>
+            <div class="perf-stat-val" id="perfNTx">—</div>
+          </div>
+          <div class="perf-stat">
+            <div class="perf-stat-label">Period</div>
+            <div class="perf-stat-val" id="perfPeriodRange">—</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── Charts row ─────────────────────────────────────────────────── -->
+    <div class="row g-3 mb-4">
+      <div class="col-12 col-md-5">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="text-secondary small mb-2">Portfolio Allocation (by est. buys)</div>
+            <div class="chart-wrap" style="max-height:300px;">
+              <canvas id="donutChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-12 col-md-7">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="text-secondary small mb-2">Trade Activity Timeline</div>
+            <div class="chart-wrap">
+              <canvas id="timelineChart"></canvas>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Positions table ────────────────────────────────────────────── -->
+    <div class="card shadow-sm">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table id="portfolioTable" class="table table-striped table-hover mb-0 align-middle">
+            <thead class="sticky-top">
+              <tr>
+                <th>Ticker</th>
+                <th class="text-center">Buys</th>
+                <th class="text-center">Sells</th>
+                <th>Direction</th>
+                <th class="text-end">Est. Bought</th>
+                <th class="text-end">Est. Sold</th>
+                <th class="text-end">Current Price</th>
+                <th>Last Trade</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div><!-- /summarySection -->
+
+</main>
+
+<script src="config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="portfolio.js"></script>
+
+</body>
+</html>

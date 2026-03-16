@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(cd:*)",
+      "WebSearch",
+      "WebFetch(domain:www.quiverquant.com)",
+      "WebFetch(domain:api.quiverquant.com)",
+      "WebFetch(domain:api.unusualwhales.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:finnhub.io)",
+      "WebFetch(domain:disclosures-clerk.house.gov)",
+      "WebFetch(domain:efts.house.gov)",
+      "WebFetch(domain:unusualwhales.com)",
+      "WebFetch(domain:housestockwatcher.com)",
+      "WebFetch(domain:senatestockwatcher.com)",
+      "WebFetch(domain:site.financialmodelingprep.com)",
+      "WebFetch(domain:www.opensecrets.org)",
+      "WebFetch(domain:gist.github.com)",
+      "WebFetch(domain:www.capitoltrades.com)",
+      "WebFetch(domain:pypi.org)",
+      "WebFetch(domain:www.congress.gov)",
+      "WebFetch(domain:algotrading101.com)",
+      "WebFetch(domain:unusualwhales.substack.com)",
+      "WebFetch(domain:senate-stock-watcher-data.s3-us-west-2.amazonaws.com)",
+      "WebFetch(domain:house-stock-watcher-data.s3-us-west-2.amazonaws.com)",
+      "Bash(curl:*)",
+      "Bash(python:*)",
+      "Bash(pip install:*)"
+    ]
+  }
+}

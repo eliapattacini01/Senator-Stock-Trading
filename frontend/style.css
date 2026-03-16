@@ -1,135 +1,394 @@
-/* Base */
+/* ── Base ───────────────────────────────────────────────────────────────────── */
+:root {
+  --bg-page:    #0b0e14;
+  --bg-card:    #13171f;
+  --bg-card2:   #1a1f2e;
+  --border:     #252b38;
+  --accent:     #3b82f6;
+  --accent-dim: #1d4ed8;
+  --text:       #e2e8f0;
+  --text-dim:   #94a3b8;
+  --buy-color:  #22c55e;
+  --sell-color: #ef4444;
+}
+
 body {
-  font-family: Arial, sans-serif;
+  background-color: var(--bg-page);
+  color: var(--text);
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
   margin: 0;
-  min-height: 100vh;
-  background: radial-gradient(circle at top, #1a2233 0%, #0f1115 45%);
 }
 
-.filters {
-  margin-bottom: 20px;
-}
-
-table {
-  border-collapse: collapse;
-  width: 100%;
-}
-
-th,
-td {
-  border: 1px solid #ccc;
-  padding: 8px;
-}
-
-th {
-  background: #f0f0f0;
-}
-
-.loading {
-  margin: 10px 0;
-  font-weight: bold;
-}
-
-.status {
-  margin: 10px 0;
-  color: #b00020;
-}
-
-#transactionsTable td:nth-child(5) {
-  font-variant-numeric: tabular-nums;
-}
-
-.card {
-  background-color: #161a22;
-}
-
+/* ── Navbar ─────────────────────────────────────────────────────────────────── */
 .navbar {
-  backdrop-filter: blur(6px);
-  border-bottom: 1px solid #2a2f3a;
+  background: linear-gradient(90deg, #0d1117 0%, #161b27 100%) !important;
+  border-bottom: 1px solid var(--border);
+  padding: 0.6rem 0;
 }
 
-.card {
-  border: 1px solid #2a2f3a;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.25) !important;
-}
-
-.summary-card {
-  border: 1px solid #2a2f3a;
-}
-
-.summary-label {
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #9ca3af;
-}
-
-.summary-value {
-  margin-top: 0.25rem;
-  font-size: 1.6rem;
+.navbar-brand {
   font-weight: 700;
-  color: #f9fafb;
+  font-size: 1.1rem;
+  color: var(--accent) !important;
+  letter-spacing: -0.02em;
 }
 
+.navbar-brand span {
+  color: var(--text);
+}
+
+.nav-link {
+  color: var(--text-dim) !important;
+  font-size: 0.875rem;
+  padding: 0.4rem 0.85rem !important;
+  border-radius: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-link:hover,
+.nav-link.active {
+  color: var(--text) !important;
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.nav-link.active {
+  color: var(--accent) !important;
+}
+
+/* ── Cards ──────────────────────────────────────────────────────────────────── */
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.card-body {
+  padding: 1.1rem;
+}
+
+/* stat cards */
+.stat-card {
+  background: var(--bg-card2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.stat-card .stat-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.stat-card .stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.stat-card .stat-sub {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.stat-card.buy  { border-left: 3px solid var(--buy-color);  }
+.stat-card.sell { border-left: 3px solid var(--sell-color); }
+.stat-card.info { border-left: 3px solid var(--accent);     }
+
+/* ── Table ──────────────────────────────────────────────────────────────────── */
 .table {
-  --bs-table-bg: #161a22;
+  --bs-table-bg:            var(--bg-card);
+  --bs-table-striped-bg:    #161b27;
+  --bs-table-hover-bg:      #1e2436;
+  --bs-table-color:         var(--text);
+  --bs-table-striped-color: var(--text);
+  --bs-table-hover-color:   var(--text);
+  font-size: 0.875rem;
 }
 
 .table thead {
-  --bs-table-bg: #1f2430;
+  --bs-table-bg: #1a2035;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
 }
 
-.chart-card-body {
-  height: 460px;
+.table tbody tr {
+  transition: background 0.1s;
 }
 
-@media (max-width: 768px) {
-  .chart-card-body {
-    height: 360px;
-  }
+/* amount column – tabular numbers */
+.table td:last-child,
+.table td.num {
+  font-variant-numeric: tabular-nums;
 }
 
-input,
-select {
-  background-color: #0f1115 !important;
-  color: #e5e7eb !important;
+/* ── Badges ─────────────────────────────────────────────────────────────────── */
+.badge-buy {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--buy-color);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
-input::placeholder {
-  color: #9ca3af;
+.badge-sell {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--sell-color);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
-.ts-control,
+.badge-senate {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.badge-house {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.badge-ticker {
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Form controls ──────────────────────────────────────────────────────────── */
+.form-select,
+.form-control {
+  background-color: var(--bg-card2) !important;
+  color: var(--text) !important;
+  border-color: var(--border) !important;
+  border-radius: 7px;
+  font-size: 0.875rem;
+}
+
+.form-select:focus,
+.form-control:focus {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.35) !important;
+  border-color: var(--accent) !important;
+}
+
+.form-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────────── */
+.btn-primary {
+  background-color: var(--accent);
+  border-color: var(--accent);
+  font-size: 0.875rem;
+  border-radius: 7px;
+}
+
+.btn-primary:hover {
+  background-color: var(--accent-dim);
+  border-color: var(--accent-dim);
+}
+
+.btn-outline-secondary {
+  color: var(--text-dim);
+  border-color: var(--border);
+  font-size: 0.8rem;
+  border-radius: 7px;
+}
+
+.btn-outline-secondary:hover {
+  background-color: var(--bg-card2);
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ── Tom Select (dark) ──────────────────────────────────────────────────────── */
+.ts-control {
+  background-color: var(--bg-card2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 7px !important;
+  font-size: 0.875rem;
+}
+
+.ts-control input { color: var(--text) !important; }
+.ts-control input::placeholder { color: var(--text-dim) !important; }
+
 .ts-dropdown {
-  background-color: #0f1115 !important;
-  color: #e5e7eb;
-  border-color: #2a2f3a;
-}
-
-.ts-dropdown {
+  background-color: var(--bg-card2) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
   z-index: 9999 !important;
+  font-size: 0.875rem;
 }
 
+.ts-dropdown .option { color: var(--text) !important; background: transparent !important; }
 .ts-dropdown .option.active,
 .ts-dropdown .option:hover {
-  background-color: #1f2937 !important;
-  color: #ffffff !important;
+  background-color: rgba(59, 130, 246, 0.15) !important;
+  color: #fff !important;
 }
 
+.ts-control .item { color: var(--text) !important; }
 
-.footer-note {
-  margin-top: 2rem;
-  padding: 1rem 0 2rem;
-  border-top: 1px solid #2a2f3a;
-  color: #9ca3af;
+.ts-dropdown::-webkit-scrollbar { width: 6px; }
+.ts-dropdown::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 3px;
+}
+
+/* ── Loading / status ───────────────────────────────────────────────────────── */
+.spinner-border {
+  width: 1.2rem;
+  height: 1.2rem;
+  border-width: 2px;
+}
+
+/* ── Pagination info ────────────────────────────────────────────────────────── */
+#pageInfo {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+}
+
+/* ── Chart containers ───────────────────────────────────────────────────────── */
+.chart-wrap {
+  position: relative;
+  min-height: 260px;
+}
+
+/* ── Portfolio page ─────────────────────────────────────────────────────────── */
+.direction-long  { color: var(--buy-color);  font-weight: 600; }
+.direction-short { color: var(--sell-color); font-weight: 600; }
+
+.price-up   { color: var(--buy-color);  }
+.price-down { color: var(--sell-color); }
+
+/* ── Performance chart — trading app style ──────────────────────────────────── */
+.perf-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+}
+
+.perf-return {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.perf-window {
+  font-size: 0.8rem;
+}
+
+.perf-spy {
   font-size: 0.9rem;
 }
 
-.footer-note a {
-  color: #93c5fd;
-  text-decoration: none;
+.perf-chart-wrap {
+  position: relative;
+  height: 260px;
+  margin: 1rem 0 0.5rem;
 }
 
-.footer-note a:hover {
-  text-decoration: underline;
+#perfChart {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Period buttons */
+.perf-periods {
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+  padding: 0.5rem 0 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.period-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.period-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.period-btn.active {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Bottom stats strip */
+.perf-stats-row {
+  display: flex;
+  gap: 2rem;
+  flex-wrap: wrap;
+  padding-top: 0.85rem;
+}
+
+.perf-stat-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-dim);
+  margin-bottom: 2px;
+}
+
+.perf-stat-val {
+  font-size: 0.95rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Donut legend */
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
 }

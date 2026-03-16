@@ -1,5 +1,4 @@
 const API_BASE = window.API_BASE;
-let chart = null;
 
 function getQS() {
   return new URLSearchParams(window.location.search);
@@ -13,18 +12,18 @@ function setQS(params) {
 
 function qsGet(params, key, fallback = "") {
   const v = params.get(key);
-  return v === null || v === undefined ? fallback : v;
+  return (v === null || v === undefined) ? fallback : v;
 }
 
+
+let chart = null;
+
 function setLoading(isLoading) {
-  const el = document.getElementById("loading");
-  if (!el) return;
-  el.classList.toggle("d-none", !isLoading);
+  document.getElementById("loading").classList.toggle("d-none", !isLoading);
 }
 
 function setStatus(message = "") {
   const el = document.getElementById("status");
-  if (!el) return;
   el.textContent = message;
   el.classList.toggle("d-none", !message);
 }
@@ -38,97 +37,43 @@ async function fetchJson(url) {
   return await res.json();
 }
 
-function toMonthStart(dateStr) {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  d.setUTCDate(1);
-  return d;
-}
-
-function formatMonth(dateObj) {
-  return dateObj.toISOString().slice(0, 10);
-}
-
-function addMonth(dateObj) {
-  const d = new Date(dateObj);
-  d.setUTCMonth(d.getUTCMonth() + 1);
-  d.setUTCDate(1);
-  return d;
-}
-
-function normalizeMonthlySeries(rows) {
-  if (!rows.length) return [];
-
-  const map = new Map(rows.map((r) => [r.month_start, r]));
-  const start = toMonthStart(rows[0].month_start);
-  const end = toMonthStart(rows[rows.length - 1].month_start);
-
-  const normalized = [];
-  for (let cursor = start; cursor <= end; cursor = addMonth(cursor)) {
-    const key = formatMonth(cursor);
-    const existing = map.get(key);
-    normalized.push({
-      month_start: key,
-      buy_senators: existing?.buy_senators ?? 0,
-      sell_senators: existing?.sell_senators ?? 0,
-    });
-  }
-
-  return normalized;
-}
-
-function updateSummaryCards(rows) {
-  const monthsEl = document.getElementById("monthsValue");
-  const peakBuyEl = document.getElementById("peakBuyValue");
-  const peakSellEl = document.getElementById("peakSellValue");
-
-  const months = rows.length;
-  const peakBuy = rows.reduce((max, r) => Math.max(max, r.buy_senators ?? 0), 0);
-  const peakSell = rows.reduce((max, r) => Math.max(max, r.sell_senators ?? 0), 0);
-
-  if (monthsEl) monthsEl.textContent = String(months);
-  if (peakBuyEl) peakBuyEl.textContent = String(peakBuy);
-  if (peakSellEl) peakSellEl.textContent = String(peakSell);
-}
-
 async function loadTickers() {
-  const tickers = await fetchJson(`${API_BASE}/tickers`);
+  setStatus("");
+  setLoading(true);
+  try {
+    const tickers = await fetchJson(`${API_BASE}/tickers`);
 
-  const sel = document.getElementById("tickerSelect");
-  if (!sel) return;
+    const sel = document.getElementById("tickerSelect");
+    sel.innerHTML = "";
+    tickers.forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = t.ticker;
+      opt.textContent = t.ticker;
+      sel.appendChild(opt);
+    });
 
-  sel.innerHTML = "";
-  tickers.forEach((t) => {
-    const opt = document.createElement("option");
-    opt.value = t.ticker;
-    opt.textContent = t.ticker;
-    sel.appendChild(opt);
-  });
-
-  if (tickers.length > 0) sel.value = tickers[0].ticker;
+    // choose a default ticker if exists
+    if (tickers.length > 0) sel.value = tickers[0].ticker;
+  } catch (err) {
+    console.error(err);
+    setStatus(`Error loading tickers: ${err.message}`);
+  } finally {
+    setLoading(false);
+  }
 }
 
-function renderChart(rows, mode, smoothOn) {
+function renderChart(labels, buySeries, sellSeries, mode) {
   const ctx = document.getElementById("tsChart");
-  if (!ctx) return;
 
   if (chart) chart.destroy();
 
-  const labels = rows.map((r) => r.month_start);
-  const buySeries = rows.map((r) => r.buy_senators ?? 0);
-  const sellSeries = rows.map((r) => r.sell_senators ?? 0);
-
-  const tension = smoothOn ? 0.3 : 0;
   const datasets = [];
 
   if (mode === "buy" || mode === "both") {
     datasets.push({
       label: "BUY (unique senators)",
       data: buySeries,
-      borderColor: "#22c55e",
-      backgroundColor: "rgba(34,197,94,0.2)",
-      fill: false,
-      tension,
-      pointRadius: 2,
+      tension: 0.25
     });
   }
 
@@ -136,11 +81,7 @@ function renderChart(rows, mode, smoothOn) {
     datasets.push({
       label: "SELL (unique senators)",
       data: sellSeries,
-      borderColor: "#ef4444",
-      backgroundColor: "rgba(239,68,68,0.2)",
-      fill: false,
-      tension,
-      pointRadius: 2,
+      tension: 0.25
     });
   }
 
@@ -149,93 +90,11 @@ function renderChart(rows, mode, smoothOn) {
     data: { labels, datasets },
     options: {
       responsive: true,
-      maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
       plugins: { legend: { display: true } },
       scales: {
-        y: { beginAtZero: true, ticks: { precision: 0 } },
-      },
-    },
-  });
-}
-
-function updateUrlFromTimeseriesUI() {
-  const params = getQS();
-
-  const ticker = document.getElementById("tickerSelect")?.value ?? "";
-  const mode = document.getElementById("modeSelect")?.value ?? "both";
-  const smooth = document.getElementById("smoothSelect")?.value ?? "on";
-
-  if (ticker) params.set("ticker", ticker);
-  else params.delete("ticker");
-
-  params.set("mode", mode);
-  params.set("smooth", smooth);
-
-  setQS(params);
-}
-
-function applyUrlStateToTimeseriesUI() {
-  const params = getQS();
-  const ticker = qsGet(params, "ticker", "");
-  const mode = qsGet(params, "mode", "both");
-  const smooth = qsGet(params, "smooth", "on");
-
-  if (ticker) document.getElementById("tickerSelect").value = ticker;
-  document.getElementById("modeSelect").value = ["buy", "sell", "both"].includes(mode) ? mode : "both";
-  document.getElementById("smoothSelect").value = smooth === "off" ? "off" : "on";
-}
-
-async function loadTransactionsForSelectedTicker() {
-  const tbody = document.querySelector("#transactionsTable tbody");
-  if (!tbody) return;
-
-  const ticker = document.getElementById("tickerSelect")?.value;
-  const mode = document.getElementById("modeSelect")?.value;
-
-  if (!ticker) {
-    tbody.innerHTML = "";
-    return;
-  }
-
-  let side = "";
-  if (mode === "buy") side = "BUY";
-  if (mode === "sell") side = "SELL";
-
-  const limit = 200;
-  let url = `${API_BASE}/transactions?limit=${limit}&offset=0&ticker=${encodeURIComponent(ticker)}`;
-  if (side) url += `&side=${encodeURIComponent(side)}`;
-
-  const data = await fetchJson(url);
-
-  tbody.innerHTML = "";
-  data.forEach((t) => {
-    const tr = document.createElement("tr");
-
-    const senatorTd = document.createElement("td");
-    senatorTd.textContent = t.full_name ?? "";
-
-    const tickerTd = document.createElement("td");
-    const tickerBadge = document.createElement("span");
-    tickerBadge.className = "badge text-bg-secondary";
-    tickerBadge.textContent = t.ticker ?? "";
-    tickerTd.appendChild(tickerBadge);
-
-    const sideTd = document.createElement("td");
-    const sideBadge = document.createElement("span");
-    sideBadge.className = `badge ${t.side === "BUY" ? "text-bg-success" : "text-bg-danger"}`;
-    sideBadge.textContent = t.side ?? "";
-    sideTd.appendChild(sideBadge);
-
-    const dateTd = document.createElement("td");
-    dateTd.textContent = t.tx_date ?? "";
-
-    const amountTd = document.createElement("td");
-    amountTd.className = "text-end";
-    amountTd.textContent = t.tx_estimate ?? "";
-
-    tr.append(senatorTd, tickerTd, sideTd, dateTd, amountTd);
-    tbody.appendChild(tr);
+        y: { beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
   });
 }
 
@@ -244,31 +103,36 @@ async function loadTimeSeries() {
   setLoading(true);
 
   try {
-    const ticker = document.getElementById("tickerSelect")?.value;
-    const mode = document.getElementById("modeSelect")?.value;
-    const smoothOn = document.getElementById("smoothSelect")?.value !== "off";
-
+    const ticker = document.getElementById("tickerSelect").value;
+    const mode = document.getElementById("modeSelect").value;
     if (!ticker) {
       setStatus("Please select a ticker first.");
       return;
     }
 
-    const data = await fetchJson(`${API_BASE}/timeseries/monthly?ticker=${encodeURIComponent(ticker)}&mode=${encodeURIComponent(mode)}`);
+    const data = await fetchJson(
+      `${API_BASE}/timeseries/monthly?ticker=${encodeURIComponent(ticker)}&mode=${encodeURIComponent(mode)}`
+    );
 
-    if (!data.length) {
+    if (!data || data.length === 0) {
       setStatus("No data for this ticker.");
       if (chart) chart.destroy();
       chart = null;
-      document.querySelector("#transactionsTable tbody").innerHTML = "";
-      updateSummaryCards([]);
+
+      // also clear table
+      const tbody = document.querySelector("#transactionsTable tbody");
+      if (tbody) tbody.innerHTML = "";
       return;
     }
 
-    const normalized = normalizeMonthlySeries(data);
-    renderChart(normalized, mode, smoothOn);
-    updateSummaryCards(normalized);
+    const labels = data.map(r => r.month_start);
+    const buySeries = data.map(r => r.buy_senators ?? 0);
+    const sellSeries = data.map(r => r.sell_senators ?? 0);
+
+    renderChart(labels, buySeries, sellSeries, mode);
+
+    // ✅ refresh table to match selection
     await loadTransactionsForSelectedTicker();
-    updateUrlFromTimeseriesUI();
   } catch (err) {
     console.error(err);
     setStatus(`Error loading chart: ${err.message}`);
@@ -277,31 +141,112 @@ async function loadTimeSeries() {
   }
 }
 
+
+// Wire UI
+document.getElementById("loadBtn").addEventListener("click", loadTimeSeries);
+document.getElementById("tickerSelect").addEventListener("change", loadTimeSeries);
+document.getElementById("modeSelect").addEventListener("change", loadTimeSeries);
+
+// Init
+(async () => {
+  await loadTickers();
+  const sel = document.getElementById("tickerSelect");
+  if (sel.options.length === 0) {
+    setStatus("No tickers available. Check /tickers endpoint and your database ticker values.");
+    return;
+  }
+  await loadTimeSeries();
+})();
+
+async function loadTransactionsForSelectedTicker() {
+  const tbody = document.querySelector("#transactionsTable tbody");
+  if (!tbody) return;
+
+  const ticker = document.getElementById("tickerSelect").value;
+  const mode = document.getElementById("modeSelect").value; // both | buy | sell
+
+  if (!ticker) {
+    tbody.innerHTML = "";
+    return;
+  }
+
+  // Map mode -> API side param (adjust if your backend expects different values)
+  let side = "";
+  if (mode === "buy") side = "BUY";
+  if (mode === "sell") side = "SELL";
+
+  // Pick how many rows you want to show (you can increase)
+  const limit = 200;
+  let url = `${API_BASE}/transactions?limit=${limit}&offset=0&ticker=${encodeURIComponent(ticker)}`;
+  if (side) url += `&side=${encodeURIComponent(side)}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+    const data = await res.json();
+
+    tbody.innerHTML = "";
+
+    data.forEach(t => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${t.full_name ?? ""}</td>
+        <td><span class="badge text-bg-secondary">${t.ticker ?? ""}</span></td>
+        <td>${
+          t.side === "BUY"
+            ? '<span class="badge text-bg-success">BUY</span>'
+            : '<span class="badge text-bg-danger">SELL</span>'
+        }</td>
+        <td>${t.tx_date ?? ""}</td>
+        <td class="text-end">${t.tx_estimate ?? ""}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    // Optional: show a small status if no rows
+    if (data.length === 0) {
+      // keep chart status separate if you prefer
+      // setStatus("No transactions found for this selection.");
+    }
+  } catch (err) {
+    console.error(err);
+    setStatus(`Error loading transactions table: ${err.message}`);
+  }
+}
+
+function applyUrlStateToTimeseriesUI() {
+  const params = getQS();
+  const ticker = qsGet(params, "ticker", "");
+  const mode   = qsGet(params, "mode", "both");
+
+  const tickerEl = document.getElementById("tickerSelect");
+  const modeEl   = document.getElementById("modeSelect");
+
+  if (tickerEl) tickerEl.value = ticker;
+  if (modeEl) modeEl.value = mode;
+}
+function updateUrlFromTimeseriesUI() {
+  const params = getQS();
+
+  const ticker = document.getElementById("tickerSelect")?.value ?? "";
+  const mode   = document.getElementById("modeSelect")?.value ?? "both";
+
+  if (ticker) params.set("ticker", ticker); else params.delete("ticker");
+  if (mode) params.set("mode", mode); else params.delete("mode");
+
+  setQS(params);
+}
 function onTimeseriesChanged() {
+  updateUrlFromTimeseriesUI();
   loadTimeSeries();
 }
 
 document.getElementById("tickerSelect")?.addEventListener("change", onTimeseriesChanged);
 document.getElementById("modeSelect")?.addEventListener("change", onTimeseriesChanged);
-document.getElementById("smoothSelect")?.addEventListener("change", onTimeseriesChanged);
 document.getElementById("loadBtn")?.addEventListener("click", onTimeseriesChanged);
-
 (async () => {
-  try {
-    setLoading(true);
-    await loadTickers();
-    const sel = document.getElementById("tickerSelect");
-    if (!sel || sel.options.length === 0) {
-      setStatus("No tickers available. Check /tickers endpoint and database values.");
-      return;
-    }
-
-    applyUrlStateToTimeseriesUI();
-    await loadTimeSeries();
-  } catch (err) {
-    console.error(err);
-    setStatus(`Startup error: ${err.message}`);
-  } finally {
-    setLoading(false);
-  }
+  await loadTickers();                  // fills dropdown options
+  applyUrlStateToTimeseriesUI();        // now tickerSelect.value can match
+  updateUrlFromTimeseriesUI();          // normalize URL
+  loadTimeSeries();
 })();
