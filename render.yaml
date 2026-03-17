@@ -48,3 +48,14 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false
+
+  - type: cron
+    name: price-refresh
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python crons/refresh_prices.py
+    schedule: "0 11 * * *"  # 06:00 ET (daily, after scrapers finish)
+    envVars:
+      - key: DATABASE_URL
+        sync: false
