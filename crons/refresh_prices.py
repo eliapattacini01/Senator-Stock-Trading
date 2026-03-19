@@ -21,7 +21,10 @@ LOGGER = logging.getLogger(__name__)
 from backend.db import get_connection
 from backend.performance import _download_from_stooq, _download_from_yfinance, _save_to_db
 
-# Fetch all distinct valid tickers from the transactions table
+# Fetch tickers traded in the last 2 years — old/delisted stocks are not useful
+import datetime as _dt
+cutoff = _dt.date.today() - _dt.timedelta(days=730)
+
 conn = get_connection()
 cur  = conn.cursor()
 cur.execute("""
@@ -29,8 +32,9 @@ cur.execute("""
     FROM transactions
     WHERE ticker IS NOT NULL
       AND ticker NOT IN ('--', 'UNKNOWN', '')
+      AND tx_date >= %s
     ORDER BY ticker
-""")
+""", (cutoff,))
 tickers = [r[0] for r in cur.fetchall()]
 conn.close()
 
@@ -55,3 +59,8 @@ for ticker in tickers:
         failed += 1
 
 LOGGER.info("Price refresh done: %d updated, %d failed", ok, failed)
+
+# Pre-compute leaderboard and top-stocks cache now that prices are fresh
+LOGGER.info("Triggering leaderboard pre-computation…")
+import runpy
+runpy.run_path(os.path.join(os.path.dirname(__file__), "compute_leaderboard.py"))

@@ -26,7 +26,8 @@
       "WebFetch(domain:house-stock-watcher-data.s3-us-west-2.amazonaws.com)",
       "Bash(curl:*)",
       "Bash(python:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(where python:*)"
     ]
   }
 }

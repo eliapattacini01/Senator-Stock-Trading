@@ -137,3 +137,57 @@ document.getElementById("chamberFilter").addEventListener("change", e => {
 });
 
 loadLeaderboard();
+
+/* ── Top Stocks ─────────────────────────────────────────────────────────── */
+
+function renderTickerList(rows, containerId) {
+  const el = document.getElementById(containerId);
+  if (!el) return;
+  if (!rows.length) { el.innerHTML = `<div class="text-secondary small">No data</div>`; return; }
+
+  el.innerHTML = rows.map((r, i) => {
+    const changeHtml = r.price_change != null
+      ? (() => {
+          const pct  = (r.price_change * 100).toFixed(1);
+          const sign = r.price_change >= 0 ? "+" : "";
+          const col  = r.price_change >= 0 ? "var(--buy-color)" : "var(--sell-color)";
+          return `<span style="color:${col};font-weight:600">${sign}${pct}%</span>`;
+        })()
+      : `<span class="text-secondary">—</span>`;
+
+    return `
+      <div class="d-flex align-items-center justify-content-between py-2 ${i < rows.length - 1 ? "border-bottom" : ""}" style="border-color:rgba(255,255,255,0.06)!important">
+        <div class="d-flex align-items-center gap-3">
+          <span class="text-secondary" style="font-size:0.75rem;width:1rem">${i + 1}</span>
+          <a href="timeseries.html?ticker=${encodeURIComponent(r.ticker)}"
+             class="fw-semibold badge-ticker text-decoration-none" style="font-size:0.95rem">${r.ticker}</a>
+          <span class="text-secondary" style="font-size:0.75rem">${r.n_trades} trades · ${r.n_members} members</span>
+        </div>
+        <div>${changeHtml}</div>
+      </div>`;
+  }).join("");
+}
+
+async function loadTopStocks() {
+  document.getElementById("tsLoading")?.classList.remove("d-none");
+  document.getElementById("tsCards")?.classList.add("d-none");
+  try {
+    const url = `${LB_API}/top-stocks?period=${_lbPeriod}&top_n=5${_lbChamber ? "&chamber=" + encodeURIComponent(_lbChamber) : ""}`;
+    const data = await fetch(url).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+    renderTickerList(data.buys,  "tsBuyList");
+    renderTickerList(data.sells, "tsSellList");
+    document.getElementById("tsCards")?.classList.remove("d-none");
+  } catch (err) {
+    console.warn("Top stocks error:", err);
+  } finally {
+    document.getElementById("tsLoading")?.classList.add("d-none");
+  }
+}
+
+loadTopStocks();
+
+// Re-load top stocks when period or chamber changes
+document.getElementById("lbPeriods").addEventListener("click", e => {
+  if (e.target.closest(".period-btn")) loadTopStocks();
+});
+document.getElementById("chamberFilter").addEventListener("change", () => loadTopStocks());

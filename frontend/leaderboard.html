@@ -83,6 +83,37 @@
     No priced transactions found for this period.
   </div>
 
+  <!-- ── Top Stocks ────────────────────────────────────────────────────── -->
+  <div class="mt-5">
+    <h5 class="fw-bold mb-1" style="color:var(--text)">Top Stocks This Period</h5>
+    <div class="small mb-3" style="color:var(--text-dim)">Most traded tickers by congress members · price change over the same window</div>
+
+    <div id="tsLoading" class="text-center py-3 d-none">
+      <div class="spinner-border spinner-border-sm" role="status"></div>
+    </div>
+
+    <div class="row g-3" id="tsCards">
+      <!-- Top Bought -->
+      <div class="col-12 col-md-6">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="small fw-semibold mb-3" style="color:var(--buy-color)">&#9650; Top Bought</div>
+            <div id="tsBuyList"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Top Sold -->
+      <div class="col-12 col-md-6">
+        <div class="card shadow-sm h-100">
+          <div class="card-body">
+            <div class="small fw-semibold mb-3" style="color:var(--sell-color)">&#9660; Top Sold</div>
+            <div id="tsSellList"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </main>
 
 <script src="config.js"></script>

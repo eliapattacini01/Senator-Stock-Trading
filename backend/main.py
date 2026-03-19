@@ -637,10 +637,6 @@ def portfolio_performance(person: str = Query(..., min_length=1)):
 
 # ── /leaderboard ──────────────────────────────────────────────────────────────
 
-_leaderboard_cache: dict = {}
-_leaderboard_ts:    dict = {}
-LEADERBOARD_TTL = 3600  # seconds
-
 ALLOWED_LB_PERIODS = {"1M", "3M", "YTD", "1Y"}
 
 
@@ -649,43 +645,19 @@ def get_leaderboard(
     period: str = Query("1M"),
     limit:  int = Query(20, ge=5, le=50),
 ):
-    """
-    Top members by return on BUY transactions made in the selected period.
-
-    Method: for each BUY, look up price at trade date and current price using
-    the Stooq price cache. Compute weighted-average return (weight = tx_estimate).
-    This answers: "if you mirrored this member's buys, how much would you have made?"
-    """
     if period not in ALLOWED_LB_PERIODS:
         raise HTTPException(400, f"period must be one of {sorted(ALLOWED_LB_PERIODS)}")
-
-    cache_key = f"{period}_{limit}"
-    now = time.time()
-    if cache_key in _leaderboard_cache and now - _leaderboard_ts.get(cache_key, 0) < LEADERBOARD_TTL:
-        return _leaderboard_cache[cache_key]
-
-    today = _dt.date.today()
-    if period == "1M":
-        start = today - _dt.timedelta(days=30)
-    elif period == "3M":
-        start = today - _dt.timedelta(days=90)
-    elif period == "YTD":
-        start = _dt.date(today.year, 1, 1)
-    else:  # 1Y
-        start = today - _dt.timedelta(days=365)
 
     conn = get_connection()
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT full_name, chamber, ticker, tx_date, tx_estimate
-            FROM transactions
-            WHERE side = 'BUY'
-              AND tx_date >= %s AND tx_date <= %s
-              AND ticker IS NOT NULL AND ticker NOT IN ('--', 'UNKNOWN', '')
-              AND tx_estimate > 0
-            ORDER BY full_name, tx_date
-        """, (start, today))
+            SELECT full_name, chamber, period_return, total_invested, n_trades, n_priced
+            FROM leaderboard_cache
+            WHERE period = %s
+            ORDER BY rank ASC
+            LIMIT %s
+        """, (period, limit))
         rows = cur.fetchall()
     finally:
         conn.close()
@@ -693,75 +665,52 @@ def get_leaderboard(
     if not rows:
         return []
 
-    from collections import defaultdict
-    import pandas as pd
-    from backend.performance import _price_series
+    return [
+        {
+            "full_name":      r[0],
+            "chamber":        r[1],
+            "period_return":  r[2],
+            "total_invested": r[3],
+            "n_trades":       r[4],
+            "n_priced":       r[5],
+        }
+        for r in rows
+    ]
 
-    member_trades: dict = defaultdict(list)
-    member_chamber: dict = {}
-    for name, chamber, ticker, tx_date, tx_estimate in rows:
-        member_trades[name].append((ticker, tx_date, float(tx_estimate or 0)))
-        member_chamber[name] = chamber
 
-    unique_tickers = {t for trades in member_trades.values() for t, _, _ in trades}
+# ── /top-stocks ───────────────────────────────────────────────────────────────
 
-    price_map: dict = {}
-    for ticker in unique_tickers:
-        ps = _price_series(ticker)
-        if ps is not None:
-            s = ps.set_index("date")["price"]
-            s.index = pd.to_datetime(s.index)
-            price_map[ticker] = s
+ALLOWED_TS_PERIODS = {"1M", "3M", "YTD", "1Y"}
 
-    today_ts = pd.Timestamp(today)
-    results = []
 
-    for name, trades in member_trades.items():
-        total_weight   = 0.0
-        weighted_ret   = 0.0
-        total_invested = 0.0
-        n_priced       = 0
+@app.get("/top-stocks")
+def top_stocks(
+    period:  str = Query("1M"),
+    top_n:   int = Query(5, ge=1, le=20),
+    chamber: str | None = None,
+):
+    if period not in ALLOWED_TS_PERIODS:
+        raise HTTPException(400, f"period must be one of {sorted(ALLOWED_TS_PERIODS)}")
+    if chamber and chamber not in ALLOWED_CHAMBER:
+        raise HTTPException(400, "chamber must be Senate or House")
 
-        for ticker, tx_date, estimate in trades:
-            if ticker not in price_map or estimate <= 0:
-                continue
-            series = price_map[ticker]
-            tx_ts  = pd.Timestamp(tx_date)
-            try:
-                p_then = series.asof(tx_ts)
-                p_now  = series.asof(today_ts)
-            except Exception:
-                continue
-            if pd.isna(p_then) or p_then <= 0 or pd.isna(p_now) or p_now <= 0:
-                continue
-            ret = p_now / p_then - 1.0
-            weighted_ret   += estimate * ret
-            total_weight   += estimate
-            total_invested += estimate
-            n_priced       += 1
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT side, ticker, n_trades, n_members, price_change
+            FROM top_stocks_cache
+            WHERE period = %s AND rank <= %s
+            ORDER BY side, rank ASC
+        """, (period, top_n))
+        rows = cur.fetchall()
+    finally:
+        conn.close()
 
-        if total_weight > 0 and n_priced >= 1:
-            results.append({
-                "full_name":      name,
-                "chamber":        member_chamber.get(name, ""),
-                "period_return":  round(weighted_ret / total_weight, 4),
-                "total_invested": round(total_invested),
-                "n_trades":       len(trades),
-                "n_priced":       n_priced,
-            })
+    buys  = [{"ticker": r[1], "n_trades": r[2], "n_members": r[3], "price_change": r[4]} for r in rows if r[0] == "BUY"]
+    sells = [{"ticker": r[1], "n_trades": r[2], "n_members": r[3], "price_change": r[4]} for r in rows if r[0] == "SELL"]
 
-    # Deduplicate by (first, last) token key (keep entry with highest abs return)
-    norm_groups: dict = {}
-    for r in results:
-        key = _norm_key(r["full_name"])
-        if key not in norm_groups or abs(r["period_return"]) > abs(norm_groups[key]["period_return"]):
-            norm_groups[key] = r
-
-    output = sorted(norm_groups.values(), key=lambda x: x["period_return"], reverse=True)[:limit]
-
-    _leaderboard_cache[cache_key] = output
-    _leaderboard_ts[cache_key]    = now
-    return output
+    return {"period": period, "buys": buys, "sells": sells}
 
 
 # ── /scrape/trigger ───────────────────────────────────────────────────────────
