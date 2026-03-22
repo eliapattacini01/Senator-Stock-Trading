@@ -122,8 +122,8 @@ def ingest_to_db(df: pd.DataFrame, chamber: str = "Senate") -> int:
                     skipped += 1
                     continue
 
-                first = str(row.get("first_name", "")).strip()
-                last  = str(row.get("last_name",  "")).strip()
+                first = re.sub(r'^[^a-zA-Z]+', '', str(row.get("first_name", "")).strip())
+                last  = re.sub(r'^[^a-zA-Z]+', '', str(row.get("last_name",  "")).strip())
                 full_name = f"{first} {last}".strip()
                 if not full_name:
                     skipped += 1

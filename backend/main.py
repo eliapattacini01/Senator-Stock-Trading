@@ -5,8 +5,10 @@ import re as _re
 import time
 from contextlib import asynccontextmanager
 from typing import Optional
-
+import anthropic
+import json
 from dotenv import load_dotenv
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -729,3 +731,151 @@ def trigger_scrape(job: str = Query("senate_daily")):
         return {"status": "triggered", "job": job}
     except ImportError:
         raise HTTPException(503, "Scheduler not available (apscheduler not installed).")
+
+#Chat bot
+tools = [
+    {
+        "name": "get_transactions",
+        "description": "Fetch recent congressional stock transactions. Use this when the user asks about trades made by senators or representatives.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "senator": {"type": "string", "description": "Full name of the senator or representative"},
+                "ticker":  {"type": "string", "description": "Stock ticker symbol e.g. AAPL, NVDA"},
+                "side":    {"type": "string", "enum": ["BUY", "SELL"]},
+                "limit":   {"type": "integer", "default": 10}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_prices",
+        "description": "Fetch historical stock prices. Use this when the user asks about stock prices.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "ticker":     {"type": "string", "description": "Stock ticker symbol"},
+                "start_date": {"type": "string", "description": "Start date e.g. 2025-01-01"},
+                "end_date":   {"type": "string", "description": "End date e.g. 2025-03-20"},
+                "limit":      {"type": "integer", "default": 10}
+            },
+            "required": []
+        }
+    },
+    {
+        "name": "get_top_stocks",
+        "description": "Get the most traded stocks by congress members. Use this when the user asks about top, most popular, or most traded stocks.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "period": {"type": "string", "enum": ["1M", "3M", "YTD", "1Y"]},
+                "side":   {"type": "string", "enum": ["BUY", "SELL"]},
+                "limit":  {"type": "integer", "default": 5}
+            },
+            "required": []
+        }
+    }
+]
+def _query_transactions(senator=None, ticker=None, side=None, limit=10):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        sql = "SELECT full_name, ticker, side, tx_date, tx_estimate FROM transactions WHERE 1=1"
+        params = []
+        if senator:
+            sql += " AND full_name ILIKE %s"; params.append(f"%{senator}%")
+        if side:
+            sql += " AND side = %s"; params.append(side)
+        if ticker:
+            sql += " AND ticker = %s"; params.append(ticker.upper())
+        sql += " ORDER BY tx_date DESC LIMIT %s"
+        params.append(limit)
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        return [{"full_name": r[0], "ticker": r[1], "side": r[2], "tx_date": str(r[3]), "tx_estimate": r[4]} for r in rows]
+    finally:
+        conn.close()
+
+
+def _query_prices(ticker=None, start_date=None, end_date=None, limit=10):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        sql = "SELECT ticker, date, price FROM prices WHERE 1=1"
+        params = []
+        if ticker:
+            sql += " AND ticker = %s"; params.append(ticker.upper())
+        if start_date:
+            sql += " AND date >= %s"; params.append(start_date)
+        if end_date:
+            sql += " AND date <= %s"; params.append(end_date)
+        sql += " ORDER BY date DESC LIMIT %s"
+        params.append(limit)
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        return [{"ticker": r[0], "date": str(r[1]), "price": r[2]} for r in rows]
+    finally:
+        conn.close()
+
+
+def _query_top_stocks(period="1Y", side=None, limit=5):
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        sql = "SELECT side, ticker, n_trades, n_members, price_change FROM top_stocks_cache WHERE period = %s AND rank <= %s"
+        params = [period, limit]
+        if side:
+            sql += " AND side = %s"; params.append(side)
+        sql += " ORDER BY side, rank ASC"
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+        return [{"side": r[0], "ticker": r[1], "n_trades": r[2], "n_members": r[3], "price_change": r[4]} for r in rows]
+    finally:
+        conn.close()
+def run_tool(name, inputs):
+    if name == "get_transactions":
+        return _query_transactions(**inputs)
+    if name == "get_prices":
+        return _query_prices(**inputs)
+    if name == "get_top_stocks":
+        return _query_top_stocks(**inputs)
+    return {"error": "unknown tool"}
+
+class ChatRequest(BaseModel):
+    message: str
+    history: list = []
+
+@app.post("/chat")
+def chat(req: ChatRequest):
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    messages = req.history + [{"role": "user", "content": req.message}]
+
+    while True:
+        response = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            system="You are a helpful assistant for a congressional stock trading tracker. "
+                    "Always try to use your tools to answer questions about congressional trades, portfolios, and stock prices. "
+                    "Answer in a conversational, natural tone. "
+                    "Avoid markdown tables. Summarize findings in plain sentences or short bullet points. "
+                    "Be concise and highlight the most interesting facts. "
+                    "Only decline if the question is completely unrelated to finance or politics.",
+            tools=tools,
+            messages=messages
+        )
+
+        if response.stop_reason == "end_turn":
+            return {"reply": response.content[0].text}
+
+        if response.stop_reason == "tool_use":
+            messages.append({"role": "assistant", "content": response.content})
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    result = run_tool(block.name, block.input)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": json.dumps(result, default=str)
+                    })
+            messages.append({"role": "user", "content": tool_results})

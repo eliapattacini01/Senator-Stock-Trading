@@ -136,9 +136,12 @@ def _save_to_db(ticker: str, df: pd.DataFrame) -> None:
         LOGGER.warning("DB price save failed for %s: %s", ticker, exc)
 
 
+PRICE_HISTORY_START = "2020-01-01"
+
+
 def _download_from_stooq(ticker: str) -> Optional[pd.DataFrame]:
     """Download daily prices from Stooq (no local file caching)."""
-    url = f"https://stooq.com/q/d/l/?s={ticker}.US&i=d"
+    url = f"https://stooq.com/q/d/l/?s={ticker}.US&d1={PRICE_HISTORY_START.replace('-', '')}&i=d"
     try:
         df = pd.read_csv(url, timeout=10)
         if df is None or df.empty or "Date" not in df.columns:
@@ -158,7 +161,7 @@ def _download_from_yfinance(ticker: str) -> Optional[pd.DataFrame]:
     """Fallback: download full price history from yfinance (no local file caching)."""
     try:
         import yfinance as yf
-        raw = yf.download(ticker, period="max", progress=False, auto_adjust=True)
+        raw = yf.download(ticker, start=PRICE_HISTORY_START, progress=False, auto_adjust=True)
         if raw is None or raw.empty:
             return None
         if isinstance(raw.columns, pd.MultiIndex):

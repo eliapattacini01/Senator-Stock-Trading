@@ -21,28 +21,45 @@ LOGGER = logging.getLogger(__name__)
 from backend.db import get_connection
 from backend.performance import _download_from_stooq, _download_from_yfinance, _save_to_db
 
-# Fetch tickers traded in the last 2 years — old/delisted stocks are not useful
 import datetime as _dt
 cutoff = _dt.date.today() - _dt.timedelta(days=730)
 
 conn = get_connection()
 cur  = conn.cursor()
+
+# Group 1 — tickers traded in the last 2 years (keep prices fresh)
 cur.execute("""
-    SELECT DISTINCT ticker
-    FROM transactions
+    SELECT DISTINCT ticker FROM transactions
     WHERE ticker IS NOT NULL
       AND ticker NOT IN ('--', 'UNKNOWN', '')
       AND tx_date >= %s
     ORDER BY ticker
 """, (cutoff,))
-tickers = [r[0] for r in cur.fetchall()]
+recent_tickers = {r[0] for r in cur.fetchall()}
+
+# Group 2 — tickers never seen in the prices table (backfill for portfolio page)
+cur.execute("""
+    SELECT DISTINCT t.ticker FROM transactions t
+    LEFT JOIN prices p ON p.ticker = t.ticker
+    WHERE t.ticker IS NOT NULL
+      AND t.ticker NOT IN ('--', 'UNKNOWN', '')
+      AND p.ticker IS NULL
+    ORDER BY t.ticker
+""")
+missing_tickers = {r[0] for r in cur.fetchall()}
+
 conn.close()
+
+tickers = sorted(recent_tickers | missing_tickers)
 
 # Always include SPY for the benchmark line
 if "SPY" not in tickers:
     tickers.append("SPY")
 
-LOGGER.info("Refreshing prices for %d tickers", len(tickers))
+LOGGER.info(
+    "Refreshing prices: %d recent + %d never-seen = %d total",
+    len(recent_tickers), len(missing_tickers), len(tickers),
+)
 
 ok = 0
 failed = 0

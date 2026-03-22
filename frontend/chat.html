@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Congress Trades — Chat</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+
+  <style>
+    #chat-box {
+      height: 520px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 1rem;
+    }
+
+    .msg {
+      max-width: 75%;
+      padding: 10px 14px;
+      border-radius: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .msg-user {
+      align-self: flex-end;
+      background-color: #0d6efd;
+      color: #fff;
+      border-bottom-right-radius: 3px;
+    }
+
+    .msg-claude {
+      align-self: flex-start;
+      background-color: #2b2d31;
+      color: #e0e0e0;
+      border-bottom-left-radius: 3px;
+    }
+
+    .msg-label {
+      font-size: 0.7rem;
+      color: #888;
+      margin-bottom: 3px;
+    }
+
+    .msg-user-wrap  { display: flex; flex-direction: column; align-items: flex-end; }
+    .msg-claude-wrap { display: flex; flex-direction: column; align-items: flex-start; }
+
+    #typing {
+      align-self: flex-start;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #888;
+      font-size: 0.85rem;
+      padding: 6px 10px;
+    }
+
+    .dot-pulse {
+      display: flex;
+      gap: 4px;
+    }
+
+    .dot-pulse span {
+      width: 6px;
+      height: 6px;
+      background: #888;
+      border-radius: 50%;
+      animation: pulse 1.2s infinite ease-in-out;
+    }
+
+    .dot-pulse span:nth-child(2) { animation-delay: 0.2s; }
+    .dot-pulse span:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes pulse {
+      0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+      40%            { opacity: 1;   transform: scale(1);   }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Navbar ─────────────────────────────────────────────────────────────── -->
+<nav class="navbar navbar-expand-lg">
+  <div class="container">
+    <a class="navbar-brand" href="leaderboard.html">Congress<span>Trades</span></a>
+    <div class="d-flex gap-1">
+      <a class="nav-link" href="leaderboard.html">Leaderboard</a>
+      <a class="nav-link" href="index.html">Transactions</a>
+      <a class="nav-link" href="timeseries.html">Time Series</a>
+      <a class="nav-link" href="monthlychar.html">Bar Chart</a>
+      <a class="nav-link" href="portfolio.html">Portfolio</a>
+      <a class="nav-link active" href="chat.html">Chat</a>
+    </div>
+  </div>
+</nav>
+
+<main class="container my-4">
+
+  <div class="row justify-content-center">
+    <div class="col-12 col-lg-8">
+
+      <div class="card shadow-sm">
+        <div class="card-header d-flex align-items-center justify-content-between">
+          <span class="fw-semibold">Congressional Trades Assistant</span>
+          <button class="btn btn-outline-secondary btn-sm" onclick="clearChat()">Clear</button>
+        </div>
+
+        <!-- Messages -->
+        <div class="card-body p-0">
+          <div id="chat-box">
+            <div class="msg-claude-wrap">
+              <div class="msg-label">Assistant</div>
+              <div class="msg msg-claude">Hello! Ask me anything about congressional stock trades — recent buys, top stocks, senator portfolios, or price history.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Input -->
+        <div class="card-footer">
+          <div class="d-flex gap-2">
+            <input
+              id="chat-input"
+              type="text"
+              class="form-control"
+              placeholder="Ask a question..."
+              onkeydown="if(event.key==='Enter') sendMessage()"
+            />
+            <button class="btn btn-primary px-4" onclick="sendMessage()" id="send-btn">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Suggested questions -->
+      <div class="mt-3 d-flex flex-wrap gap-2">
+        <span class="text-secondary small me-1 align-self-center">Try:</span>
+        <button class="btn btn-outline-secondary btn-sm" onclick="ask('Which senators bought NVDA recently?')">Who bought NVDA?</button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="ask('What are the top traded stocks this year?')">Top stocks this year</button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="ask('Show me recent sells in the Senate')">Recent Senate sells</button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="ask('What is the price history of AAPL?')">AAPL price history</button>
+      </div>
+
+    </div>
+  </div>
+
+</main>
+
+<script src="config.js"></script>
+<script>
+  function parseMarkdown(text) {
+    return text
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")  // escape HTML
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")                    // **bold**
+      .replace(/\*(.+?)\*/g, "<em>$1</em>")                                // *italic*
+      .replace(/^- (.+)/gm, "<li>$1</li>")                                 // - bullet
+      .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")                          // wrap bullets in <ul>
+      .replace(/\n/g, "<br>");                                              // newlines
+  }
+
+  let history = [];
+
+  function ask(question) {
+    document.getElementById("chat-input").value = question;
+    sendMessage();
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById("chat-input");
+    const message = input.value.trim();
+    if (!message) return;
+
+    input.value = "";
+    appendMessage("user", message);
+    setLoading(true);
+
+    try {
+      const res = await fetch(`${window.API_BASE}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message, history })
+      });
+
+      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+
+      const data = await res.json();
+
+      history.push({ role: "user",      content: message });
+      history.push({ role: "assistant", content: data.reply });
+
+      appendMessage("claude", data.reply);
+    } catch (err) {
+      appendMessage("claude", `Error: ${err.message}. Is the backend running?`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function appendMessage(role, text) {
+    const box = document.getElementById("chat-box");
+
+    // Remove typing indicator if present
+    const typing = document.getElementById("typing");
+    if (typing) typing.remove();
+
+    const wrap = document.createElement("div");
+    wrap.className = role === "user" ? "msg-user-wrap" : "msg-claude-wrap";
+
+    const label = document.createElement("div");
+    label.className = "msg-label";
+    label.textContent = role === "user" ? "You" : "Assistant";
+
+    const bubble = document.createElement("div");
+    bubble.className = `msg msg-${role === "user" ? "user" : "claude"}`;
+    bubble.innerHTML = parseMarkdown(text);
+
+    wrap.appendChild(label);
+    wrap.appendChild(bubble);
+    box.appendChild(wrap);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function setLoading(loading) {
+    const btn = document.getElementById("send-btn");
+    const input = document.getElementById("chat-input");
+    const box = document.getElementById("chat-box");
+
+    btn.disabled = loading;
+    input.disabled = loading;
+
+    if (loading) {
+      const typing = document.createElement("div");
+      typing.id = "typing";
+      typing.innerHTML = `<div class="dot-pulse"><span></span><span></span><span></span></div> Thinking…`;
+      box.appendChild(typing);
+      box.scrollTop = box.scrollHeight;
+    }
+  }
+
+  function clearChat() {
+    history = [];
+    const box = document.getElementById("chat-box");
+    box.innerHTML = `
+      <div class="msg-claude-wrap">
+        <div class="msg-label">Assistant</div>
+        <div class="msg msg-claude">Hello! Ask me anything about congressional stock trades — recent buys, top stocks, senator portfolios, or price history.</div>
+      </div>`;
+  }
+</script>
+
+</body>
+</html>
