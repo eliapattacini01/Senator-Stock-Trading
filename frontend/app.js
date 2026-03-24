@@ -113,8 +113,7 @@ async function loadTickersIndex() {
 /* ── Transactions ───────────────────────────────────────────────────────────── */
 function chamberBadge(c) {
   if (!c) return "";
-  const cls = c === "Senate" ? "badge-senate" : "badge-house";
-  return `<span class="${cls}">${c}</span>`;
+  return `<span style="font-family:'Space Grotesk',sans-serif;font-size:0.65rem;font-weight:500;padding:2px 10px;border-radius:9999px;background:#1f1f21;color:#c3c6d8;border:1px solid rgba(67,70,85,0.3);">${c}</span>`;
 }
 
 async function loadTransactions(resetOffset = false) {
@@ -143,20 +142,37 @@ async function loadTransactions(resetOffset = false) {
 
     data.forEach(t => {
       const tr = document.createElement("tr");
-      const side_badge = t.side === "BUY"
-        ? `<span class="badge-buy">BUY</span>`
-        : `<span class="badge-sell">SELL</span>`;
+      tr.style.cssText = "transition:background 0.15s;cursor:default;";
+      tr.onmouseenter = () => tr.style.background = "rgba(255,255,255,0.03)";
+      tr.onmouseleave = () => tr.style.background = "";
+
+      const avatarHtml = window.memberAvatarHtml
+        ? window.memberAvatarHtml(t.full_name, 36)
+        : `<div style="width:36px;height:36px;border-radius:50%;background:#353437;display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span class="material-symbols-outlined" style="font-size:18px;color:#8d90a1;">person</span></div>`;
+
+      const sideBadge = t.side === "BUY"
+        ? `<span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.62rem;padding:2px 9px;border-radius:9999px;background:rgba(83,223,154,0.1);color:#53df9a;border:1px solid rgba(83,223,154,0.2);letter-spacing:0.05em;">BUY</span>`
+        : `<span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.62rem;padding:2px 9px;border-radius:9999px;background:rgba(255,180,171,0.1);color:#ffb4ab;border:1px solid rgba(255,180,171,0.2);letter-spacing:0.05em;">SELL</span>`;
+
+      const amtFmt = t.tx_estimate != null ? "$" + fmt(t.tx_estimate) : "—";
+
       tr.innerHTML = `
-        <td>
-          <a href="portfolio.html?person=${encodeURIComponent(t.full_name)}"
-             class="text-decoration-none text-light fw-medium">${t.full_name}</a>
+        <td style="padding:16px 24px;">
+          <div style="display:flex;align-items:center;gap:12px;">
+            <div style="width:36px;height:36px;border-radius:50%;overflow:hidden;flex-shrink:0;border:1px solid rgba(67,70,85,0.2);">${avatarHtml}</div>
+            <a href="portfolio.html?person=${encodeURIComponent(t.full_name)}"
+               style="font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:0.875rem;color:#e5e1e4;text-decoration:none;"
+               onmouseover="this.style.color='#b4c5ff'" onmouseout="this.style.color='#e5e1e4'">${t.full_name}</a>
+          </div>
         </td>
-        <td>${chamberBadge(t.chamber)}</td>
-        <td><span class="badge-ticker">${t.ticker}</span></td>
-        <td>${side_badge}</td>
-        <td class="text-secondary small">${t.tx_date ?? ""}</td>
-        <td class="text-secondary small">${t.file_date ?? "—"}</td>
-        <td class="text-end num">${t.tx_estimate != null ? "$" + fmt(t.tx_estimate) : "—"}</td>
+        <td style="padding:16px 24px;">${chamberBadge(t.chamber)}</td>
+        <td style="padding:16px 24px;">
+          <span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.7rem;padding:4px 8px;border-radius:6px;background:rgba(255,255,255,0.05);color:#b4c5ff;">${t.ticker}</span>
+        </td>
+        <td style="padding:16px 24px;">${sideBadge}</td>
+        <td style="padding:16px 24px;font-family:'Space Grotesk',sans-serif;font-size:0.8rem;color:#c3c6d8;">${t.tx_date ?? ""}</td>
+        <td style="padding:16px 24px;font-family:'Space Grotesk',sans-serif;font-size:0.8rem;color:#8d90a1;">${t.file_date ?? "—"}</td>
+        <td style="padding:16px 24px;text-align:right;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.875rem;color:#e5e1e4;">${amtFmt}</td>
       `;
       tbody.appendChild(tr);
     });
@@ -236,3 +252,9 @@ document.getElementById("prevBtn")?.addEventListener("click", () => {
   updateUrl();
   loadTransactions(false);
 })();
+
+// Re-render table photos once legislators.json finishes loading
+document.addEventListener("legislators:ready", function () {
+  const tbody = document.querySelector("#transactionsTable tbody");
+  if (tbody && tbody.children.length) loadTransactions(false);
+});

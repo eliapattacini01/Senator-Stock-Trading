@@ -64,24 +64,47 @@ async function loadTickers() {
 
 function renderChart(labels, buySeries, sellSeries, mode) {
   const ctx = document.getElementById("tsChart");
-
   if (chart) chart.destroy();
 
   const datasets = [];
 
   if (mode === "buy" || mode === "both") {
+    const gradBuy = ctx.getContext("2d").createLinearGradient(0, 0, 0, 320);
+    gradBuy.addColorStop(0, "rgba(180,197,255,0.22)");
+    gradBuy.addColorStop(1, "rgba(180,197,255,0)");
     datasets.push({
-      label: "BUY (unique senators)",
+      label: "BUY",
       data: buySeries,
-      tension: 0.25
+      borderColor: "#b4c5ff",
+      backgroundColor: gradBuy,
+      borderWidth: 2,
+      fill: true,
+      tension: 0.4,
+      pointBackgroundColor: "#b4c5ff",
+      pointBorderColor: "#131315",
+      pointBorderWidth: 2,
+      pointRadius: 4,
+      pointHoverRadius: 7,
     });
   }
 
   if (mode === "sell" || mode === "both") {
+    const gradSell = ctx.getContext("2d").createLinearGradient(0, 0, 0, 320);
+    gradSell.addColorStop(0, "rgba(255,180,171,0.22)");
+    gradSell.addColorStop(1, "rgba(255,180,171,0)");
     datasets.push({
-      label: "SELL (unique senators)",
+      label: "SELL",
       data: sellSeries,
-      tension: 0.25
+      borderColor: "#ffb4ab",
+      backgroundColor: gradSell,
+      borderWidth: 2,
+      fill: true,
+      tension: 0.4,
+      pointBackgroundColor: "#ffb4ab",
+      pointBorderColor: "#131315",
+      pointBorderWidth: 2,
+      pointRadius: 4,
+      pointHoverRadius: 7,
     });
   }
 
@@ -90,9 +113,46 @@ function renderChart(labels, buySeries, sellSeries, mode) {
     data: { labels, datasets },
     options: {
       responsive: true,
-      plugins: { legend: { display: true } },
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          labels: {
+            color: "#8d90a1",
+            font: { family: "'Space Grotesk', sans-serif", size: 11 },
+            usePointStyle: true,
+            pointStyleWidth: 8,
+            padding: 20,
+          }
+        },
+        tooltip: {
+          backgroundColor: "#1b1b1d",
+          borderColor: "rgba(67,70,85,0.5)",
+          borderWidth: 1,
+          titleColor: "#e5e1e4",
+          bodyColor: "#c3c6d8",
+          titleFont: { family: "'Plus Jakarta Sans', sans-serif", weight: "700", size: 12 },
+          bodyFont:  { family: "'Space Grotesk', sans-serif", size: 11 },
+          padding: 14,
+          cornerRadius: 10,
+        }
+      },
       scales: {
-        y: { beginAtZero: true, ticks: { precision: 0 } }
+        x: {
+          ticks: { color: "#8d90a1", font: { family: "'Space Grotesk', sans-serif", size: 10 } },
+          grid:  { color: "rgba(67,70,85,0.15)" },
+          border: { color: "rgba(67,70,85,0.25)" },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            precision: 0,
+            color: "#8d90a1",
+            font: { family: "'Space Grotesk', sans-serif", size: 10 },
+          },
+          grid:  { color: "rgba(67,70,85,0.15)" },
+          border: { color: "rgba(67,70,85,0.25)" },
+        }
       }
     }
   });
@@ -189,16 +249,19 @@ async function loadTransactionsForSelectedTicker() {
 
     data.forEach(t => {
       const tr = document.createElement("tr");
+      tr.style.cssText = "border-bottom:1px solid rgba(67,70,85,0.08);transition:background 0.15s;";
+      tr.onmouseenter = () => tr.style.background = "rgba(42,42,44,0.4)";
+      tr.onmouseleave = () => tr.style.background = "";
+      const sideHtml = t.side === "BUY"
+        ? `<span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.65rem;padding:2px 8px;border-radius:9999px;background:rgba(83,223,154,0.12);color:#53df9a;letter-spacing:0.05em;">BUY</span>`
+        : `<span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.65rem;padding:2px 8px;border-radius:9999px;background:rgba(255,180,171,0.12);color:#ffb4ab;letter-spacing:0.05em;">SELL</span>`;
+      const amtFmt = t.tx_estimate ? "$" + Number(t.tx_estimate).toLocaleString() : "—";
       tr.innerHTML = `
-        <td>${t.full_name ?? ""}</td>
-        <td><span class="badge text-bg-secondary">${t.ticker ?? ""}</span></td>
-        <td>${
-          t.side === "BUY"
-            ? '<span class="badge text-bg-success">BUY</span>'
-            : '<span class="badge text-bg-danger">SELL</span>'
-        }</td>
-        <td>${t.tx_date ?? ""}</td>
-        <td class="text-end">${t.tx_estimate ?? ""}</td>
+        <td style="padding:14px 20px;font-family:'Inter',sans-serif;font-size:0.8rem;color:#e5e1e4;">${t.full_name ?? ""}</td>
+        <td style="padding:14px 20px;"><span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.7rem;padding:2px 8px;border-radius:6px;background:#1b1b1d;color:#b4c5ff;">${t.ticker ?? ""}</span></td>
+        <td style="padding:14px 20px;">${sideHtml}</td>
+        <td style="padding:14px 20px;font-family:'Space Grotesk',sans-serif;font-size:0.8rem;color:#c3c6d8;">${t.tx_date ?? ""}</td>
+        <td style="padding:14px 20px;text-align:right;font-family:'Space Grotesk',sans-serif;font-size:0.8rem;color:#8d90a1;">${amtFmt}</td>
       `;
       tbody.appendChild(tr);
     });

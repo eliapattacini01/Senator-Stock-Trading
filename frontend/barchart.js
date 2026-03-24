@@ -46,10 +46,12 @@ function renderBucketChart(bucketStart) {
       datasets: [{
         label: "# Members",
         data:   values,
-        backgroundColor: "rgba(59, 130, 246, 0.7)",
-        borderColor:     "rgba(59, 130, 246, 1)",
-        borderWidth:     1,
-        borderRadius:    4,
+        backgroundColor: "rgba(180,197,255,0.65)",
+        borderColor:     "#b4c5ff",
+        borderWidth:     0,
+        borderRadius:    8,
+        borderSkipped:   false,
+        hoverBackgroundColor: "rgba(180,197,255,0.9)",
       }],
     },
     options: {
@@ -58,6 +60,15 @@ function renderBucketChart(bucketStart) {
       plugins: {
         legend: { display: false },
         tooltip: {
+          backgroundColor: "#1b1b1d",
+          borderColor: "rgba(67,70,85,0.5)",
+          borderWidth: 1,
+          titleColor: "#e5e1e4",
+          bodyColor: "#c3c6d8",
+          titleFont: { family: "'Plus Jakarta Sans', sans-serif", weight: "700", size: 12 },
+          bodyFont:  { family: "'Space Grotesk', sans-serif", size: 11 },
+          padding: 14,
+          cornerRadius: 10,
           callbacks: {
             afterLabel: ctx => {
               const row = rows[ctx.dataIndex];
@@ -71,22 +82,24 @@ function renderBucketChart(bucketStart) {
       },
       scales: {
         x: {
-          ticks:  { color: "#94a3b8", font: { size: 11 } },
-          grid:   { color: "rgba(255,255,255,0.04)" },
+          ticks:  { color: "#8d90a1", font: { family: "'Space Grotesk', sans-serif", size: 11 } },
+          grid:   { display: false },
+          border: { color: "rgba(67,70,85,0.25)" },
         },
         y: {
           beginAtZero: true,
           ticks: {
-            color: "#94a3b8",
-            font:  { size: 11 },
+            color: "#8d90a1",
+            font:  { family: "'Space Grotesk', sans-serif", size: 11 },
             stepSize: 1,
           },
-          grid: { color: "rgba(255,255,255,0.06)" },
+          grid:   { color: "rgba(67,70,85,0.15)" },
+          border: { color: "rgba(67,70,85,0.25)" },
           title: {
             display: true,
             text:    "# Unique Members",
-            color:   "#94a3b8",
-            font:    { size: 11 },
+            color:   "#8d90a1",
+            font:    { family: "'Space Grotesk', sans-serif", size: 11 },
           },
         },
       },
