@@ -11,6 +11,8 @@ services:
         sync: false          # set manually in Render dashboard
       - key: RENDER
         value: true          # disables APScheduler (cron jobs handle it)
+      - key: ANTHROPIC_API_KEY
+        sync: false          # set manually in Render dashboard
 
   # ── Cron Jobs ──────────────────────────────────────────────────────────────
   # Times are UTC. ET = UTC-5 (winter) / UTC-4 (summer).

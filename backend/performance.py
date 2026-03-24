@@ -113,9 +113,12 @@ def _save_to_db(ticker: str, df: pd.DataFrame) -> None:
         from backend.db import get_connection
         conn = get_connection()
         cur  = conn.cursor()
+        cutoff = pd.Timestamp(PRICE_HISTORY_START)
         rows = []
         for _, row in df.iterrows():
             d = row["date"]
+            if pd.Timestamp(d) < cutoff:
+                continue
             d = d.date() if hasattr(d, "date") else d
             p = float(row["price"])
             if p > 0:

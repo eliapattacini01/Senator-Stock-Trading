@@ -131,5 +131,7 @@ document.getElementById("bucketSelect").addEventListener("change", e => {
   if (_bcData.length > 0) renderBucketChart(e.target.value);
 });
 
-// Auto-load on page open
-loadChart();
+// Auto-load on page open (skipped on charts.html — tab event handles it instead)
+if (!document.getElementById("charts-page")) {
+  loadChart();
+}
