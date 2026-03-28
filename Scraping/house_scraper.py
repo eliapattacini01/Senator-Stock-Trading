@@ -223,7 +223,7 @@ def main(from_year: int = 2020) -> pd.DataFrame:
     n_ok = 0
 
     for i, filing in enumerate(filings):
-        url = filing["pdf_url"]
+        url   = filing["pdf_url"]
         first = filing["first_name"]
         last  = filing["last_name"]
         year  = filing["file_year"]

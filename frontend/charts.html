@@ -92,6 +92,12 @@
     .spinner-sm { width:1.25rem;height:1.25rem;border:2px solid rgba(180,197,255,0.15);border-top-color:#b4c5ff;border-radius:50%;animation:spin .8s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
 
+    /* Chart canvas heights — explicit height required when maintainAspectRatio:false */
+    #tsChart, #topTickersChart { height: 320px; }
+    @media (max-width: 640px) {
+      #tsChart, #topTickersChart { height: 260px; }
+    }
+
     /* Table */
     #transactionsTable td, #transactionsTable th { vertical-align: middle; }
 
@@ -112,20 +118,39 @@
 <!-- Nav -->
 <nav class="w-full top-0 sticky z-50 bg-[#131315] dark:bg-[#131315] border-b border-[#1b1b1d]">
   <div class="flex justify-between items-center px-8 py-4 max-w-screen-2xl mx-auto">
-    <a href="landing.html" class="text-xl font-bold tracking-tighter text-[#b4c5ff] font-headline uppercase" style="text-decoration:none;">CongressTrades</a>
+    <a href="index.html" class="text-xl font-bold tracking-tighter text-[#b4c5ff] font-headline uppercase" style="text-decoration:none;">CongressStocks</a>
     <div class="hidden md:flex items-center gap-8">
-      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="landing.html">Home</a>
-      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="index.html">All Trades</a>
+      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="index.html">Home</a>
+      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="trades.html">All Trades</a>
       <a class="text-[#b4c5ff] border-b-2 border-[#b4c5ff] pb-1 font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="charts.html">Charts</a>
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="portfolio.html">Portfolio</a>
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
+      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="contact.html">Contact</a>
     </div>
-    <a href="chat.html" class="flex items-center gap-2 px-4 py-2 rounded-md font-label text-xs uppercase tracking-wider transition-all hover:bg-[#1f1f21]" style="color:#ddb8ff;border:1px solid rgba(221,184,255,0.25);text-decoration:none;">
+    <a href="chat.html" class="hidden md:flex items-center gap-2 px-4 py-2 rounded-md font-label text-xs uppercase tracking-wider transition-all hover:bg-[#1f1f21]" style="color:#ddb8ff;border:1px solid rgba(221,184,255,0.25);text-decoration:none;">
+      <span class="material-symbols-outlined text-sm">smart_toy</span>
+      Ask AI
+    </a>
+    <button id="menuBtn" class="md:hidden flex items-center justify-center w-10 h-10 rounded-lg transition-colors hover:bg-[#1f1f21]" style="color:#b4c5ff;" aria-label="Open menu">
+      <span class="material-symbols-outlined">menu</span>
+    </button>
+  </div>
+</nav>
+<!-- Mobile menu -->
+<div id="mobileMenu" class="hidden md:hidden bg-[#131315] border-b border-[#1b1b1d] px-6 py-4 flex-col gap-1 z-40" style="position:sticky;top:57px;">
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="index.html">Home</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="trades.html">All Trades</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-[#b4c5ff] hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="charts.html">Charts</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="portfolio.html">Portfolio</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="contact.html">Contact</a>
+  <div class="pt-2 border-t border-[#1b1b1d] mt-2">
+    <a href="chat.html" class="flex items-center gap-2 px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider transition-colors hover:bg-[#1f1f21]" style="color:#ddb8ff;text-decoration:none;">
       <span class="material-symbols-outlined text-sm">smart_toy</span>
       Ask AI
     </a>
   </div>
-</nav>
+</div>
 
 <main class="flex-grow hero-gradient">
   <div class="max-w-screen-2xl mx-auto px-8 py-12">
@@ -135,7 +160,7 @@
       <p class="font-label text-xs uppercase tracking-[0.2em] mb-4" style="color:#b4c5ff;">Data Visualisation</p>
       <div class="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <h1 class="font-headline font-extrabold text-5xl md:text-7xl tracking-tighter mb-4 bg-clip-text text-transparent bg-gradient-to-r from-on-surface to-outline">
+          <h1 class="font-headline font-extrabold text-3xl sm:text-5xl md:text-7xl tracking-tighter mb-4 bg-clip-text text-transparent bg-gradient-to-r from-on-surface to-outline">
             Market Intelligence
           </h1>
           <p class="text-on-surface-variant max-w-2xl text-lg leading-relaxed">
@@ -373,14 +398,20 @@
 <footer class="w-full border-t border-[#1b1b1d] bg-[#131315] mt-auto">
   <div class="flex flex-col md:flex-row justify-between items-center px-8 py-12 gap-6 max-w-screen-2xl mx-auto">
     <div class="flex flex-col gap-2">
-      <div class="text-lg font-bold text-gray-400 uppercase tracking-tight font-headline">CongressTrades</div>
+      <div class="text-lg font-bold text-gray-400 uppercase tracking-tight font-headline">CongressStocks</div>
       <p class="text-sm text-gray-500 font-body">© 2024 CongressTrades Observatory. Data sourced from public STOCK Act disclosures.</p>
+      <p class="text-xs text-gray-600 font-body">Data sourced from official disclosures. May contain delays or errors. Not financial advice.</p>
     </div>
-    <div class="flex gap-8">
-      <a class="text-gray-600 hover:text-[#b4c5ff] transition-all font-label text-[10px] uppercase" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
-      <a class="text-gray-600 hover:text-[#b4c5ff] transition-all font-label text-[10px] uppercase" style="text-decoration:none;" href="index.html">All Trades</a>
-      <a class="text-gray-600 hover:text-[#b4c5ff] transition-all font-label text-[10px] uppercase" style="text-decoration:none;" href="portfolio.html">Portfolio</a>
-      <a class="text-gray-600 hover:text-[#b4c5ff] transition-all font-label text-[10px] uppercase" style="text-decoration:none;" href="charts.html">Charts</a>
+    <div class="flex flex-col items-end gap-4">
+      <div class="flex gap-8">
+        <a class="text-gray-600 hover:text-[#b4c5ff] transition-all font-label text-[10px] uppercase" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
+        <a class="text-gray-600 hover:text-[#b4c5ff] transition-all font-label text-[10px] uppercase" style="text-decoration:none;" href="trades.html">All Trades</a>
+        <a class="text-gray-600 hover:text-[#b4c5ff] transition-all font-label text-[10px] uppercase" style="text-decoration:none;" href="portfolio.html">Portfolio</a>
+        <a class="text-gray-600 hover:text-[#b4c5ff] transition-all font-label text-[10px] uppercase" style="text-decoration:none;" href="charts.html">Charts</a>
+      </div>
+      <a href="https://buymeacoffee.com/CongressStocks" target="_blank" rel="noopener" class="flex items-center gap-2 px-4 py-2 rounded-lg font-label text-xs font-bold transition-all hover:opacity-90" style="background:#FFDD00;color:#000;text-decoration:none;">
+        ☕ Buy me a coffee
+      </a>
     </div>
   </div>
 </footer>
@@ -468,6 +499,25 @@
   }
 
   loadSidebar();
+
+  // Mobile menu
+  (function() {
+    var btn = document.getElementById('menuBtn');
+    var menu = document.getElementById('mobileMenu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var open = menu.style.display === 'flex';
+      menu.style.display = open ? 'none' : 'flex';
+      btn.querySelector('.material-symbols-outlined').textContent = open ? 'menu' : 'close';
+    });
+    document.addEventListener('click', function(e) {
+      if (!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+        menu.style.display = 'none';
+        btn.querySelector('.material-symbols-outlined').textContent = 'menu';
+      }
+    });
+  })();
 
   // Custom tab switching (replaces Bootstrap tabs)
   const _tsPane  = document.getElementById("timeseries-pane");

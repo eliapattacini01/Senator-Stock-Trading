@@ -2,8 +2,10 @@ fastapi
 uvicorn[standard]
 gunicorn
 psycopg[binary]
+psycopg-pool
 python-dotenv
 apscheduler
 yfinance
 pdfplumber
 anthropic
+slowapi

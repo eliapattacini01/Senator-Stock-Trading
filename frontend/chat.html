@@ -179,20 +179,33 @@
 <!-- Nav -->
 <nav class="w-full top-0 sticky z-50 bg-[#131315] border-b border-[#1b1b1d]">
   <div class="flex justify-between items-center px-8 py-4 max-w-screen-2xl mx-auto">
-    <a href="landing.html" class="text-xl font-bold tracking-tighter text-[#b4c5ff] font-headline uppercase" style="text-decoration:none;">CongressTrades</a>
+    <a href="index.html" class="text-xl font-bold tracking-tighter text-[#b4c5ff] font-headline uppercase" style="text-decoration:none;">CongressStocks</a>
     <div class="hidden md:flex items-center gap-8">
-      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="landing.html">Home</a>
-      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="index.html">All Trades</a>
+      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="index.html">Home</a>
+      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="trades.html">All Trades</a>
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="charts.html">Charts</a>
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="portfolio.html">Portfolio</a>
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
+      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="contact.html">Contact</a>
     </div>
-    <a href="chat.html" class="flex items-center gap-2 px-4 py-2 rounded-md font-label text-xs uppercase tracking-wider" style="color:#ddb8ff;background:rgba(221,184,255,0.1);border:1px solid rgba(221,184,255,0.4);text-decoration:none;">
+    <a href="chat.html" class="hidden md:flex items-center gap-2 px-4 py-2 rounded-md font-label text-xs uppercase tracking-wider" style="color:#ddb8ff;background:rgba(221,184,255,0.1);border:1px solid rgba(221,184,255,0.4);text-decoration:none;">
       <span class="material-symbols-outlined" style="font-size:14px;">smart_toy</span>
       Ask AI
     </a>
+    <button id="menuBtn" class="md:hidden flex items-center justify-center w-10 h-10 rounded-lg transition-colors hover:bg-[#1f1f21]" style="color:#b4c5ff;" aria-label="Open menu">
+      <span class="material-symbols-outlined">menu</span>
+    </button>
   </div>
 </nav>
+<!-- Mobile menu -->
+<div id="mobileMenu" class="hidden md:hidden bg-[#131315] border-b border-[#1b1b1d] px-6 py-4 flex-col gap-1 z-40" style="position:sticky;top:57px;">
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="index.html">Home</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="trades.html">All Trades</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="charts.html">Charts</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="portfolio.html">Portfolio</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="contact.html">Contact</a>
+</div>
 
 <!-- Background decorations -->
 <div class="fixed top-[-10%] right-[-5%] w-[40vw] h-[40vw] rounded-full pointer-events-none -z-10" style="background:rgba(180,197,255,0.04);filter:blur(120px);"></div>
@@ -216,7 +229,7 @@
     <div class="glass-card rounded-2xl flex flex-col overflow-hidden flex-1" style="border:1px solid rgba(67,70,85,0.15);min-height:520px;">
 
       <!-- Messages -->
-      <div id="chat-box" class="flex-1 overflow-y-auto p-6 custom-scrollbar" style="display:flex;flex-direction:column;gap:24px;min-height:400px;max-height:520px;">
+      <div id="chat-box" class="flex-1 overflow-y-auto p-6 custom-scrollbar" style="display:flex;flex-direction:column;gap:24px;min-height:300px;max-height:calc(100vh - 280px);">
         <div class="msg-claude-wrap">
           <div>
             <div class="msg-label">Congressional Trades Assistant</div>
@@ -378,6 +391,25 @@
     wrap.innerHTML = `<div><div class="msg-label">Congressional Trades Assistant</div><div class="msg msg-claude">Hello! Ask me anything about congressional stock trades — recent buys, top stocks, senator portfolios, or price history.</div></div>`;
     box.appendChild(wrap);
   }
+</script>
+<script>
+  (function() {
+    var btn = document.getElementById('menuBtn');
+    var menu = document.getElementById('mobileMenu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var open = menu.style.display === 'flex';
+      menu.style.display = open ? 'none' : 'flex';
+      btn.querySelector('.material-symbols-outlined').textContent = open ? 'menu' : 'close';
+    });
+    document.addEventListener('click', function(e) {
+      if (!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+        menu.style.display = 'none';
+        btn.querySelector('.material-symbols-outlined').textContent = 'menu';
+      }
+    });
+  })();
 </script>
 
 </body>

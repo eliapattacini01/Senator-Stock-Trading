@@ -95,6 +95,9 @@
     font-family: 'Plus Jakarta Sans', sans-serif;
     line-height: 1;
   }
+  @media (max-width: 640px) {
+    .perf-return { font-size: 1.6rem; }
+  }
   .price-up   { color: #53df9a; }
   .price-down { color: #ffb4ab; }
   .perf-stat-val {
@@ -161,20 +164,39 @@
 <!-- ── Navigation ─────────────────────────────────────────────────────────── -->
 <nav class="w-full top-0 sticky z-50 bg-[#131315] border-b border-[#1b1b1d]">
   <div class="flex justify-between items-center px-8 py-4 max-w-screen-2xl mx-auto">
-    <a href="landing.html" class="text-xl font-bold tracking-tighter text-[#b4c5ff] font-headline uppercase" style="text-decoration:none;">CongressTrades</a>
+    <a href="index.html" class="text-xl font-bold tracking-tighter text-[#b4c5ff] font-headline uppercase" style="text-decoration:none;">CongressStocks</a>
     <div class="hidden md:flex items-center gap-8">
-      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="landing.html">Home</a>
-      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="index.html">All Trades</a>
+      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="index.html">Home</a>
+      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="trades.html">All Trades</a>
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="charts.html">Charts</a>
       <a class="text-[#b4c5ff] border-b-2 border-[#b4c5ff] pb-1 font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="portfolio.html">Portfolio</a>
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
+      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="contact.html">Contact</a>
     </div>
-    <a href="chat.html" class="flex items-center gap-2 px-4 py-2 rounded-md font-label text-xs uppercase tracking-wider transition-all hover:bg-[#1f1f21]" style="color:#ddb8ff;border:1px solid rgba(221,184,255,0.25);text-decoration:none;">
+    <a href="chat.html" class="hidden md:flex items-center gap-2 px-4 py-2 rounded-md font-label text-xs uppercase tracking-wider transition-all hover:bg-[#1f1f21]" style="color:#ddb8ff;border:1px solid rgba(221,184,255,0.25);text-decoration:none;">
+      <span class="material-symbols-outlined text-sm">smart_toy</span>
+      Ask AI
+    </a>
+    <button id="menuBtn" class="md:hidden flex items-center justify-center w-10 h-10 rounded-lg transition-colors hover:bg-[#1f1f21]" style="color:#b4c5ff;" aria-label="Open menu">
+      <span class="material-symbols-outlined">menu</span>
+    </button>
+  </div>
+</nav>
+<!-- Mobile menu -->
+<div id="mobileMenu" class="hidden md:hidden bg-[#131315] border-b border-[#1b1b1d] px-6 py-4 flex-col gap-1 z-40" style="position:sticky;top:57px;">
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="index.html">Home</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="trades.html">All Trades</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="charts.html">Charts</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-[#b4c5ff] hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="portfolio.html">Portfolio</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="contact.html">Contact</a>
+  <div class="pt-2 border-t border-[#1b1b1d] mt-2">
+    <a href="chat.html" class="flex items-center gap-2 px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider transition-colors hover:bg-[#1f1f21]" style="color:#ddb8ff;text-decoration:none;">
       <span class="material-symbols-outlined text-sm">smart_toy</span>
       Ask AI
     </a>
   </div>
-</nav>
+</div>
 
 <main class="px-6 max-w-screen-2xl mx-auto space-y-6 py-12">
 
@@ -253,8 +275,9 @@
       </div>
 
       <div class="bg-surface-container p-5 rounded-2xl border-l-4 border-secondary relative overflow-hidden">
-        <p class="font-label text-xs text-on-surface-variant uppercase tracking-widest mb-2">Net Invested</p>
-        <h3 id="sumNet" class="font-headline text-3xl font-extrabold text-secondary">—</h3>
+        <p class="font-label text-xs text-on-surface-variant uppercase tracking-widest mb-2">Portfolio Return</p>
+        <h3 id="sumPortReturn" class="font-headline text-3xl font-extrabold">—</h3>
+        <p class="font-label text-[10px] text-on-surface-variant mt-1" id="sumPortReturnSub">all time</p>
         <span class="material-symbols-outlined absolute -bottom-2 -right-2 text-6xl opacity-5 text-secondary">trending_up</span>
       </div>
 
@@ -312,7 +335,7 @@
       </div>
 
       <!-- Stats strip -->
-      <div id="perfStatsRow" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-outline-variant/10">
+      <div id="perfStatsRow" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mt-6 pt-6 border-t border-outline-variant/10">
         <div>
           <p class="font-label text-xs text-on-surface-variant uppercase tracking-widest mb-1">CAGR</p>
           <p id="perfCagr" class="perf-stat-val">—</p>
@@ -320,6 +343,14 @@
         <div>
           <p class="font-label text-xs text-on-surface-variant uppercase tracking-widest mb-1">SPY CAGR</p>
           <p id="perfSpyCagr" class="perf-stat-val text-on-surface-variant">—</p>
+        </div>
+        <div>
+          <p class="font-label text-xs uppercase tracking-widest mb-1" style="color:#ddb8ff;">Disc. Return</p>
+          <p id="perfDiscReturn" class="perf-stat-val">—</p>
+        </div>
+        <div>
+          <p class="font-label text-xs uppercase tracking-widest mb-1" style="color:#ddb8ff;">Disc. CAGR</p>
+          <p id="perfDiscCagr" class="perf-stat-val" style="color:#ddb8ff;">—</p>
         </div>
         <div>
           <p class="font-label text-xs text-on-surface-variant uppercase tracking-widest mb-1">Transactions Priced</p>
@@ -388,13 +419,14 @@
 <!-- ── Footer ─────────────────────────────────────────────────────────────── -->
 <footer class="mt-16 bg-surface-container-lowest border-t border-outline-variant/10 px-8 py-8">
   <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
-    <a href="landing.html" class="font-headline text-base font-extrabold text-on-surface">Congress<span class="text-primary">Trades</span></a>
+    <a href="index.html" class="font-headline text-base font-extrabold text-on-surface">Congress<span class="text-primary">Stocks</span></a>
     <p class="font-body text-xs text-on-surface/30">Data sourced from official Senate EFDS and House PTR public disclosures. Not financial advice.</p>
-    <div class="flex gap-1">
+    <div class="flex flex-wrap gap-1 items-center">
       <a href="leaderboard.html" class="font-label text-xs text-on-surface/40 hover:text-tertiary px-3 py-1.5 rounded-lg hover:bg-surface-container transition-colors">Leaderboard</a>
-      <a href="index.html"       class="font-label text-xs text-on-surface/40 hover:text-tertiary px-3 py-1.5 rounded-lg hover:bg-surface-container transition-colors">All Trades</a>
+      <a href="trades.html"       class="font-label text-xs text-on-surface/40 hover:text-tertiary px-3 py-1.5 rounded-lg hover:bg-surface-container transition-colors">All Trades</a>
       <a href="charts.html"      class="font-label text-xs text-on-surface/40 hover:text-tertiary px-3 py-1.5 rounded-lg hover:bg-surface-container transition-colors">Charts</a>
       <a href="chat.html"        class="font-label text-xs text-on-surface/40 hover:text-tertiary px-3 py-1.5 rounded-lg hover:bg-surface-container transition-colors">Ask AI</a>
+      <a href="https://buymeacoffee.com/CongressStocks" target="_blank" rel="noopener" class="flex items-center gap-2 px-3 py-1.5 rounded-lg font-label text-xs font-bold transition-all hover:opacity-90" style="background:#FFDD00;color:#000;text-decoration:none;">☕ Buy me a coffee</a>
     </div>
   </div>
 </footer>
@@ -427,6 +459,25 @@
     new MutationObserver(() => _updatePortfolioAvatar(_titleEl.textContent.trim()))
       .observe(_titleEl, { childList: true, subtree: true, characterData: true });
   }
+</script>
+<script>
+  (function() {
+    var btn = document.getElementById('menuBtn');
+    var menu = document.getElementById('mobileMenu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      var open = menu.style.display === 'flex';
+      menu.style.display = open ? 'none' : 'flex';
+      btn.querySelector('.material-symbols-outlined').textContent = open ? 'menu' : 'close';
+    });
+    document.addEventListener('click', function(e) {
+      if (!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+        menu.style.display = 'none';
+        btn.querySelector('.material-symbols-outlined').textContent = 'menu';
+      }
+    });
+  })();
 </script>
 
 </body>

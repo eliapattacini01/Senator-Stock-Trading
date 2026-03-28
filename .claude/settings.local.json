@@ -27,7 +27,11 @@
       "Bash(curl:*)",
       "Bash(python:*)",
       "Bash(pip install:*)",
-      "Bash(where python:*)"
+      "Bash(where python:*)",
+      "Bash(mv index.html trades.html)",
+      "Bash(mv landing.html index.html)",
+      "Bash(sed -i 's/href=\"\"index\\\\.html\"\"/href=\"\"trades.html\"\"/g' *.html)",
+      "Bash(sed -i 's/href=\"\"landing\\\\.html\"\"/href=\"\"index.html\"\"/g' *.html)"
     ]
   }
 }

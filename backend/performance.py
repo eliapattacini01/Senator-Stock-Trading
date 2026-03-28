@@ -139,7 +139,23 @@ def _save_to_db(ticker: str, df: pd.DataFrame) -> None:
         LOGGER.warning("DB price save failed for %s: %s", ticker, exc)
 
 
-PRICE_HISTORY_START = "2020-01-01"
+def _get_price_history_start() -> str:
+    """Return the oldest tx_date in the DB as the price history start, fallback to 2012-01-01."""
+    try:
+        from backend.db import get_connection
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute("SELECT MIN(tx_date) FROM transactions WHERE tx_date IS NOT NULL")
+        row = cur.fetchone()
+        conn.close()
+        if row and row[0]:
+            return row[0].strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    return "2012-01-01"
+
+
+PRICE_HISTORY_START = _get_price_history_start()
 
 
 def _download_from_stooq(ticker: str) -> Optional[pd.DataFrame]:

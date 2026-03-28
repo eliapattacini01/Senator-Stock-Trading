@@ -32,7 +32,7 @@ def get_from_year() -> int:
             return since.year
     except Exception as exc:
         LOGGER.warning("Could not query latest file_date: %s", exc)
-    return dt.date.today().year
+    return 2020
 
 
 from_year = get_from_year()

@@ -3,10 +3,12 @@
 <head>
   <meta charset="utf-8"/>
   <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-  <title>CongressTrades | Leaderboard Observatory</title>
+  <title>CongressTrades | Transaction Stream</title>
   <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&family=Inter:wght@400;500;600&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet"/>
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+  <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js" defer></script>
   <script id="tailwind-config">
     tailwind.config = {
       darkMode: "class",
@@ -78,33 +80,69 @@
     .glass-card    { background: rgba(31,31,33,0.6); backdrop-filter: blur(20px); }
     .hero-gradient { background: linear-gradient(180deg, rgba(180,197,255,0.05) 0%, rgba(19,19,21,0) 100%); }
 
-    /* JS show/hide compat */
     .d-none { display: none !important; }
 
-    /* Period button active state overrides Tailwind */
-    .period-btn.active { background-color: #2a2a2c !important; color: #b4c5ff !important; }
-
     /* Spinner */
-    .spinner    { width:2rem;height:2rem;border:3px solid rgba(180,197,255,0.15);border-top-color:#b4c5ff;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto; }
-    .spinner-sm { width:1.25rem;height:1.25rem;border:2px solid rgba(180,197,255,0.15);border-top-color:#b4c5ff;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto; }
+    .spinner-sm { width:1.25rem;height:1.25rem;border:2px solid rgba(180,197,255,0.15);border-top-color:#b4c5ff;border-radius:50%;animation:spin .8s linear infinite; }
     @keyframes spin { to { transform:rotate(360deg); } }
 
-    /* Table vertical alignment */
-    #lbTable td, #lbTable th { vertical-align: middle; }
+    /* Table */
+    #transactionsTable td, #transactionsTable th { vertical-align: middle; }
+
+    /* TomSelect dark theme overrides */
+    .ts-wrapper .ts-control {
+      background: #0e0e10 !important;
+      border: 1px solid rgba(67,70,85,0.4) !important;
+      border-radius: 8px !important;
+      color: #e5e1e4 !important;
+      font-family: 'Space Grotesk', sans-serif !important;
+      font-size: 0.875rem !important;
+      padding: 10px 14px !important;
+      box-shadow: none !important;
+      min-height: unset !important;
+    }
+    .ts-wrapper.focus .ts-control {
+      border-color: #b4c5ff !important;
+      box-shadow: none !important;
+    }
+    .ts-dropdown {
+      background: #1b1b1d !important;
+      border: 1px solid rgba(67,70,85,0.4) !important;
+      border-radius: 8px !important;
+      margin-top: 4px !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+    }
+    .ts-dropdown .option {
+      color: #c3c6d8 !important;
+      font-family: 'Space Grotesk', sans-serif !important;
+      font-size: 0.8rem !important;
+      padding: 8px 14px !important;
+    }
+    .ts-dropdown .option:hover, .ts-dropdown .option.active {
+      background: #2a2a2c !important;
+      color: #e5e1e4 !important;
+    }
+    .ts-dropdown .option.selected {
+      background: rgba(180,197,255,0.1) !important;
+      color: #b4c5ff !important;
+    }
+    .ts-wrapper .ts-control input { color: #e5e1e4 !important; }
+    .ts-wrapper .ts-control input::placeholder { color: #8d90a1 !important; }
+    .ts-wrapper .clear-button { color: #8d90a1 !important; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col">
 
 <!-- Nav -->
-<nav class="w-full top-0 sticky z-50 bg-[#131315] dark:bg-[#131315] border-b border-[#1b1b1d]">
+<nav class="w-full top-0 sticky z-50 bg-[#131315] border-b border-[#1b1b1d]">
   <div class="flex justify-between items-center px-8 py-4 max-w-screen-2xl mx-auto">
     <a href="index.html" class="text-xl font-bold tracking-tighter text-[#b4c5ff] font-headline uppercase" style="text-decoration:none;">CongressStocks</a>
     <div class="hidden md:flex items-center gap-8">
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="index.html">Home</a>
-      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="trades.html">All Trades</a>
+      <a class="text-[#b4c5ff] border-b-2 border-[#b4c5ff] pb-1 font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="trades.html">All Trades</a>
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="charts.html">Charts</a>
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="portfolio.html">Portfolio</a>
-      <a class="text-[#b4c5ff] border-b-2 border-[#b4c5ff] pb-1 font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
+      <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
       <a class="text-gray-400 hover:text-white transition-colors font-label text-xs uppercase tracking-wider" style="text-decoration:none;" href="contact.html">Contact</a>
     </div>
     <a href="chat.html" class="hidden md:flex items-center gap-2 px-4 py-2 rounded-md font-label text-xs uppercase tracking-wider transition-all hover:bg-[#1f1f21]" style="color:#ddb8ff;border:1px solid rgba(221,184,255,0.25);text-decoration:none;">
@@ -119,10 +157,10 @@
 <!-- Mobile menu -->
 <div id="mobileMenu" class="hidden md:hidden bg-[#131315] border-b border-[#1b1b1d] px-6 py-4 flex-col gap-1 z-40" style="position:sticky;top:57px;">
   <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="index.html">Home</a>
-  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="trades.html">All Trades</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-[#b4c5ff] hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="trades.html">All Trades</a>
   <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="charts.html">Charts</a>
   <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="portfolio.html">Portfolio</a>
-  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-[#b4c5ff] hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
+  <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="leaderboard.html">Leaderboard</a>
   <a class="block px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider text-gray-400 hover:text-white hover:bg-[#1f1f21] transition-colors" style="text-decoration:none;" href="contact.html">Contact</a>
   <div class="pt-2 border-t border-[#1b1b1d] mt-2">
     <a href="chat.html" class="flex items-center gap-2 px-4 py-3 rounded-lg font-label text-sm uppercase tracking-wider transition-colors hover:bg-[#1f1f21]" style="color:#ddb8ff;text-decoration:none;">
@@ -136,108 +174,114 @@
   <div class="max-w-screen-2xl mx-auto px-8 py-12">
 
     <!-- Hero -->
-    <header class="mb-16">
-      <p class="font-label text-primary text-xs uppercase tracking-[0.2em] mb-4">Market Surveillance</p>
-      <h1 class="font-headline font-extrabold text-3xl sm:text-5xl md:text-7xl tracking-tighter mb-6 bg-clip-text text-transparent bg-gradient-to-r from-on-surface to-outline">
-        Leaderboard Observatory
+    <header class="mb-12">
+      <p class="font-label text-xs uppercase tracking-[0.2em] mb-4" style="color:#b4c5ff;">Live Surveillance</p>
+      <h1 class="font-headline font-extrabold text-3xl sm:text-5xl md:text-7xl tracking-tighter mb-4 bg-clip-text text-transparent bg-gradient-to-r from-on-surface to-outline">
+        Transaction Stream
       </h1>
       <p class="text-on-surface-variant max-w-2xl text-lg leading-relaxed">
-        Analyzing the high-alpha flow of legislative capital. The top-performing members of Congress based on return on equity transactions.
+        Real-time surveillance of Congressional financial activity. Precision tracking of legislative capital flows.
       </p>
     </header>
 
-    <!-- Filters -->
-    <div class="flex flex-col md:flex-row gap-6 mb-12 items-end md:items-center justify-between">
-      <div class="flex gap-2 p-1 bg-surface-container-low rounded-lg" id="lbPeriods">
-        <button class="period-btn active px-4 py-2 text-xs font-label rounded-md transition-all text-on-surface-variant hover:text-on-surface" data-period="1M">1M</button>
-        <button class="period-btn px-4 py-2 text-xs font-label rounded-md transition-all text-on-surface-variant hover:text-on-surface" data-period="3M">3M</button>
-        <button class="period-btn px-4 py-2 text-xs font-label rounded-md transition-all text-on-surface-variant hover:text-on-surface" data-period="YTD">YTD</button>
-        <button class="period-btn px-4 py-2 text-xs font-label rounded-md transition-all text-on-surface-variant hover:text-on-surface" data-period="1Y">1Y</button>
-      </div>
-      <div class="flex gap-4">
-        <div class="flex items-center gap-2 px-4 py-2 bg-surface-container-low rounded-lg font-label text-xs hover:bg-surface-container-high transition-colors">
-          <span class="material-symbols-outlined text-sm">filter_list</span>
-          <select id="chamberFilter" class="bg-transparent text-on-surface-variant focus:outline-none cursor-pointer font-label text-xs uppercase appearance-none">
-            <option value="">CHAMBER: ALL</option>
-            <option value="Senate">CHAMBER: SENATE</option>
-            <option value="House">CHAMBER: HOUSE</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <!-- Error status -->
-    <div id="lbStatus" class="d-none mb-6 px-4 py-3 rounded-lg text-sm font-label" style="background:#93000a;color:#ffdad6;border:1px solid rgba(255,180,171,0.2);"></div>
+    <!-- Status / Error -->
+    <div id="status" class="d-none mb-6 px-4 py-3 rounded-lg text-sm font-label" style="background:#93000a;color:#ffdad6;border:1px solid rgba(255,180,171,0.2);"></div>
 
     <!-- Loading -->
-    <div id="lbLoading" class="d-none text-center py-24">
-      <div class="spinner"></div>
-      <p class="mt-4 text-sm font-label text-on-surface-variant">Computing returns…</p>
+    <div id="loading" class="d-none mb-6">
+      <div class="flex items-center gap-3 px-5 py-4 rounded-xl" style="background:rgba(31,31,33,0.6);border:1px solid rgba(67,70,85,0.2);">
+        <div class="spinner-sm flex-shrink-0"></div>
+        <span class="font-label text-sm" style="color:#c3c6d8;">Loading…</span>
+      </div>
     </div>
 
-    <!-- Podium: rank 2 left | rank 1 center | rank 3 right -->
-    <div id="lbPodium" class="grid grid-cols-1 md:grid-cols-3 gap-8 items-end mb-20 d-none">
-      <div id="podium2" class="order-2 md:order-1 h-fit"></div>
-      <div id="podium1" class="order-1 md:order-2"></div>
-      <div id="podium3" class="order-3 md:order-3 h-fit"></div>
+    <!-- Stat Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-12" id="statsRow">
+      <div class="rounded-xl p-6 border-l-4" style="background:#1b1b1d;border-left-color:#b4c5ff;">
+        <p class="font-label text-xs uppercase tracking-widest mb-2" style="color:#8d90a1;">Total Transactions</p>
+        <p class="font-headline font-extrabold text-3xl tracking-tight" id="statTotal">—</p>
+      </div>
+      <div class="rounded-xl p-6 border-l-4" style="background:#1b1b1d;border-left-color:#ddb8ff;">
+        <p class="font-label text-xs uppercase tracking-widest mb-2" style="color:#8d90a1;">Members Tracked</p>
+        <p class="font-headline font-extrabold text-3xl tracking-tight" id="statMembers">—</p>
+        <p class="font-label text-xs mt-1" style="color:#8d90a1;" id="statMembersSub"></p>
+      </div>
+      <div class="rounded-xl p-6 border-l-4" style="background:#1b1b1d;border-left-color:#53df9a;">
+        <p class="font-label text-xs uppercase tracking-widest mb-2" style="color:#8d90a1;">Total Buys</p>
+        <p class="font-headline font-extrabold text-3xl tracking-tight" style="color:#53df9a;" id="statBuys">—</p>
+      </div>
+      <div class="rounded-xl p-6 border-l-4" style="background:#1b1b1d;border-left-color:#ffb4ab;">
+        <p class="font-label text-xs uppercase tracking-widest mb-2" style="color:#8d90a1;">Total Sells</p>
+        <p class="font-headline font-extrabold text-3xl tracking-tight" style="color:#ffb4ab;" id="statSells">—</p>
+      </div>
     </div>
 
-    <!-- Rankings Table -->
-    <section class="mb-20 d-none" id="lbTableCard">
-      <div class="mb-8 flex justify-between items-end">
-        <h2 class="font-headline font-bold text-2xl tracking-tight">Comprehensive Rankings</h2>
-      </div>
-      <div class="overflow-hidden rounded-xl bg-surface-container-low border border-outline-variant/10">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse" id="lbTable">
-            <thead class="bg-surface-container-high/50">
-              <tr>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Rank</th>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Legislator</th>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Chamber</th>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Performance</th>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Capital Deployed</th>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant text-right">Activity</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-outline-variant/5"></tbody>
-          </table>
-        </div>
-      </div>
-    </section>
+    <!-- Filter Bar -->
+    <div class="glass-card p-4 rounded-2xl mb-8 flex flex-wrap items-end gap-4" style="border:1px solid rgba(67,70,85,0.15);">
 
-    <!-- Empty state -->
-    <div id="lbEmpty" class="d-none text-center py-24">
-      <span class="material-symbols-outlined text-5xl mb-4 block text-outline-variant">leaderboard</span>
-      <p class="font-label text-sm text-on-surface-variant">No priced transactions found for this period.</p>
+      <div class="w-full sm:w-auto flex-1 min-w-[140px]">
+        <label class="block font-label text-xs uppercase tracking-wider mb-2" style="color:#8d90a1;">Chamber</label>
+        <select id="chamberSelect" class="w-full px-3 py-2.5 rounded-lg font-label text-sm" style="background:#0e0e10;color:#e5e1e4;border:1px solid rgba(67,70,85,0.4);">
+          <option value="">All Chambers</option>
+          <option value="Senate">Senate</option>
+          <option value="House">House</option>
+        </select>
+      </div>
+
+      <div class="w-full sm:w-auto flex-1 min-w-[160px]">
+        <label class="block font-label text-xs uppercase tracking-wider mb-2" style="color:#8d90a1;">Member</label>
+        <select id="senatorSelect" class="w-full px-3 py-2.5 rounded-lg font-label text-sm" style="background:#0e0e10;color:#e5e1e4;border:1px solid rgba(67,70,85,0.4);">
+          <option value="">All Members</option>
+        </select>
+      </div>
+
+      <div class="flex-1 min-w-[140px]">
+        <label class="block font-label text-xs uppercase tracking-wider mb-2" style="color:#8d90a1;">Ticker</label>
+        <select id="tickerSelectIndex" placeholder="Search…"></select>
+      </div>
+
+      <div class="flex-1 min-w-[120px]">
+        <label class="block font-label text-xs uppercase tracking-wider mb-2" style="color:#8d90a1;">Side</label>
+        <select id="sideSelect" class="w-full px-3 py-2.5 rounded-lg font-label text-sm" style="background:#0e0e10;color:#e5e1e4;border:1px solid rgba(67,70,85,0.4);">
+          <option value="">All</option>
+          <option value="BUY">BUY</option>
+          <option value="SELL">SELL</option>
+        </select>
+      </div>
+
+      <div>
+        <button id="loadBtn" class="px-6 py-2.5 rounded-lg font-label text-xs uppercase tracking-wider font-bold transition-all hover:opacity-90" style="background:#b4c5ff;color:#002a78;">
+          Load
+        </button>
+      </div>
     </div>
 
-    <!-- Top Stocks -->
-    <div>
-      <h2 class="font-headline font-bold text-2xl tracking-tight mb-2">Top Stocks This Period</h2>
-      <p class="text-sm text-on-surface-variant mb-8">Most traded tickers by congress members · price change over the same window</p>
-
-      <div id="tsLoading" class="d-none text-center py-8">
-        <div class="spinner-sm"></div>
+    <!-- Pagination row -->
+    <div class="flex items-center justify-between mb-4 px-1">
+      <span class="font-label text-xs" style="color:#8d90a1;" id="pageInfo">Page 1</span>
+      <div class="flex gap-2">
+        <button id="prevBtn" class="px-4 py-2 rounded-lg font-label text-xs uppercase tracking-wider transition-all hover:bg-[#2a2a2c]" style="background:#1b1b1d;color:#c3c6d8;border:1px solid rgba(67,70,85,0.3);">← Prev</button>
+        <button id="nextBtn" class="px-4 py-2 rounded-lg font-label text-xs uppercase tracking-wider transition-all hover:bg-[#2a2a2c]" style="background:#1b1b1d;color:#c3c6d8;border:1px solid rgba(67,70,85,0.3);">Next →</button>
       </div>
+    </div>
 
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8" id="tsCards">
-        <!-- Conviction Buys -->
-        <div class="glass-card rounded-xl p-8 border border-secondary/10">
-          <div class="flex items-center gap-3 mb-8">
-            <span class="material-symbols-outlined text-secondary">trending_up</span>
-            <h3 class="font-headline font-bold text-xl uppercase tracking-tight">Conviction Buys</h3>
-          </div>
-          <div id="tsBuyList" class="space-y-6"></div>
-        </div>
-        <!-- Mass Offloading -->
-        <div class="glass-card rounded-xl p-8 border border-error/10">
-          <div class="flex items-center gap-3 mb-8">
-            <span class="material-symbols-outlined text-error">trending_down</span>
-            <h3 class="font-headline font-bold text-xl uppercase tracking-tight">Mass Offloading</h3>
-          </div>
-          <div id="tsSellList" class="space-y-6"></div>
-        </div>
+    <!-- Table -->
+    <div class="overflow-hidden rounded-2xl mb-8" style="background:#1b1b1d;border:1px solid rgba(67,70,85,0.1);">
+      <div class="overflow-x-auto">
+        <table id="transactionsTable" class="w-full text-left border-collapse">
+          <thead style="background:rgba(42,42,44,0.5);">
+            <tr>
+              <th class="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em]" style="color:#8d90a1;">Member</th>
+              <th class="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em]" style="color:#8d90a1;">Chamber</th>
+              <th class="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em]" style="color:#8d90a1;">Ticker</th>
+              <th class="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em]" style="color:#8d90a1;">Side</th>
+              <th class="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em]" style="color:#8d90a1;">Trade Date</th>
+              <th class="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em]" style="color:#8d90a1;">Disclosed</th>
+              <th class="px-6 py-5 font-label text-[10px] uppercase tracking-[0.2em] text-right" style="color:#8d90a1;">Est. Amount</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y" style="border-color:rgba(67,70,85,0.08);"></tbody>
+        </table>
       </div>
     </div>
 
@@ -268,7 +312,7 @@
 
 <script src="config.js"></script>
 <script src="legislators.js"></script>
-<script src="leaderboard.js"></script>
+<script src="app.js"></script>
 <script>
   (function() {
     var btn = document.getElementById('menuBtn');

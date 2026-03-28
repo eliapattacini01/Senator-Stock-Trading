@@ -12,10 +12,15 @@ from pydantic import BaseModel
 
 load_dotenv()
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
-from backend.db import get_connection
+from backend.db import get_connection, init_pool, close_pool
 
 LOGGER = logging.getLogger(__name__)
 
@@ -146,6 +151,12 @@ def _ensure_schema() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Init DB connection pool
+    try:
+        init_pool()
+    except Exception as exc:
+        LOGGER.warning("Pool init failed: %s", exc)
+
     # Ensure schema is up to date (safe to run on every startup)
     try:
         _ensure_schema()
@@ -181,23 +192,54 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
+    # Close DB connection pool
+    close_pool()
+
 
 app = FastAPI(title="Congress Stock Trades API", lifespan=lifespan)
 
+limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(Exception)
+async def _generic_exception_handler(request: Request, exc: Exception):
+    LOGGER.error("Unhandled error: %s", exc, exc_info=True)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
+
+
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "null",
         "http://127.0.0.1:5500",
         "http://localhost:5500",
         "https://senator-stock-trading.onrender.com",
         "https://senator-stock-trading-1.onrender.com",
         "https://senator-stock-trading-2.onrender.com",
+        "https://congressstocks.com",
+        "https://www.congressstocks.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── simple TTL cache ──────────────────────────────────────────────────────────
+_ttl_cache: dict = {}   # key -> (value, expires_at)
+
+
+def _cache_get(key: str):
+    entry = _ttl_cache.get(key)
+    if entry and time.time() < entry[1]:
+        return entry[0]
+    return None
+
+
+def _cache_set(key: str, value, ttl: int):
+    _ttl_cache[key] = (value, time.time() + ttl)
+
 
 # ── allow-lists for query validation ──────────────────────────────────────────
 ALLOWED_SORT    = {"tx_date", "tx_estimate", "ticker", "full_name", "side", "chamber"}
@@ -211,14 +253,14 @@ ALLOWED_CHAMBER = {"Senate", "House"}
 
 @app.get("/transactions")
 def get_transactions(
-    senator: str | None = None,
-    side:    str | None = None,
-    ticker:  str | None = None,
-    chamber: str | None = None,
+    senator: str | None = Query(default=None, max_length=200),
+    side:    str | None = Query(default=None, max_length=10),
+    ticker:  str | None = Query(default=None, max_length=20),
+    chamber: str | None = Query(default=None, max_length=20),
     limit:   int = Query(50, ge=1, le=200),
     offset:  int = Query(0, ge=0),
-    sort:    str = "tx_date",
-    order:   str = "desc",
+    sort:    str = Query(default="tx_date", max_length=20),
+    order:   str = Query(default="desc", max_length=5),
 ):
     sort  = sort.lower()
     order = order.lower()
@@ -265,10 +307,10 @@ def get_transactions(
 
 @app.get("/transactions/count")
 def count_transactions(
-    senator: str | None = None,
-    side:    str | None = None,
-    ticker:  str | None = None,
-    chamber: str | None = None,
+    senator: str | None = Query(default=None, max_length=200),
+    side:    str | None = Query(default=None, max_length=10),
+    ticker:  str | None = Query(default=None, max_length=20),
+    chamber: str | None = Query(default=None, max_length=20),
 ):
     conn = get_connection()
     try:
@@ -350,6 +392,9 @@ def get_tickers(limit: int = 5000):
 @app.get("/stats")
 def get_stats():
     """Summary statistics for the dashboard header cards."""
+    cached = _cache_get("stats")
+    if cached is not None:
+        return cached
     conn = get_connection()
     try:
         cur = conn.cursor()
@@ -366,7 +411,7 @@ def get_stats():
             FROM transactions
         """)
         r = cur.fetchone()
-        return {
+        result = {
             "total_transactions":  r[0],
             "total_members":       r[1],
             "total_tickers":       r[2],
@@ -376,6 +421,8 @@ def get_stats():
             "house_members":       r[6],
             "latest_date":         r[7].isoformat() if r[7] else None,
         }
+        _cache_set("stats", result, 300)  # 5-minute TTL
+        return result
     finally:
         conn.close()
 
@@ -459,9 +506,9 @@ def top_activity(
 
 @app.get("/timeseries/monthly")
 def monthly_timeseries(
-    ticker:  str = Query(..., min_length=1),
-    mode:    str = Query("both"),
-    chamber: str | None = None,
+    ticker:  str = Query(..., min_length=1, max_length=20),
+    mode:    str = Query("both", max_length=10),
+    chamber: str | None = Query(default=None, max_length=20),
 ):
     mode = mode.lower()
     if mode not in {"buy", "sell", "both"}:
@@ -508,7 +555,7 @@ def monthly_timeseries(
 
 @app.get("/portfolio")
 def get_portfolio(
-    person: str = Query(..., min_length=1),
+    person: str = Query(..., min_length=1, max_length=200),
     fetch_prices: bool = Query(True),
 ):
     """
@@ -595,7 +642,8 @@ def get_portfolio(
 # ── /portfolio/performance ────────────────────────────────────────────────────
 
 @app.get("/portfolio/performance")
-def portfolio_performance(person: str = Query(..., min_length=1)):
+@limiter.limit("10/minute")
+def portfolio_performance(request: Request, person: str = Query(..., min_length=1, max_length=200)):
     """
     Simulate a member's portfolio growth over time and compare against SPY.
 
@@ -608,12 +656,17 @@ def portfolio_performance(person: str = Query(..., min_length=1)):
     import pandas as pd
     from backend.performance import simulate_portfolio_daily
 
+    cache_key = f"perf:{person.lower()}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     conn = get_connection()
     try:
         variants = _name_variants(person, conn)
         cur = conn.cursor()
         cur.execute("""
-            SELECT ticker, side, tx_date, tx_estimate
+            SELECT ticker, side, tx_date, file_date, tx_estimate
             FROM transactions
             WHERE full_name = ANY(%s)
             ORDER BY tx_date ASC
@@ -623,18 +676,40 @@ def portfolio_performance(person: str = Query(..., min_length=1)):
         conn.close()
 
     if not rows:
-        return {
-            "person": person,
+        empty = {
             "dates": [], "portfolio_growth": [], "spy_growth": [],
             "total_return": 1.0, "cagr": 1.0,
             "spy_total_return": 1.0, "spy_cagr": 1.0,
             "start_date": None, "end_date": None,
             "n_transactions": 0,
         }
+        return {
+            "person": person,
+            **empty,
+            "disclosure_dates": [], "disclosure_growth": [],
+            "disclosure_total_return": 1.0, "disclosure_cagr": 1.0,
+        }
 
-    df = pd.DataFrame(rows, columns=["ticker", "side", "tx_date", "tx_estimate"])
-    result = simulate_portfolio_daily(df)
-    return {"person": person, **result}
+    df = pd.DataFrame(rows, columns=["ticker", "side", "tx_date", "file_date", "tx_estimate"])
+
+    # Simulation 1: using actual transaction date
+    perf_tx = simulate_portfolio_daily(df[["ticker", "side", "tx_date", "tx_estimate"]].copy())
+
+    # Simulation 2: using public disclosure date (file_date) — only rows where file_date is known
+    df_disc = df.dropna(subset=["file_date"])[["ticker", "side", "file_date", "tx_estimate"]].copy()
+    df_disc = df_disc.rename(columns={"file_date": "tx_date"})
+    perf_disc = simulate_portfolio_daily(df_disc)
+
+    result = {
+        "person": person,
+        **perf_tx,
+        "disclosure_dates":        perf_disc["dates"],
+        "disclosure_growth":       perf_disc["portfolio_growth"],
+        "disclosure_total_return": perf_disc["total_return"],
+        "disclosure_cagr":         perf_disc["cagr"],
+    }
+    _cache_set(cache_key, result, 1800)  # 30-minute TTL
+    return result
 
 
 # ── /leaderboard ──────────────────────────────────────────────────────────────
@@ -718,11 +793,17 @@ def top_stocks(
 # ── /scrape/trigger ───────────────────────────────────────────────────────────
 
 @app.post("/scrape/trigger")
-def trigger_scrape(job: str = Query("senate_daily")):
+def trigger_scrape(
+    job: str = Query("senate_daily"),
+    x_scrape_secret: str | None = Header(default=None, alias="X-Scrape-Secret"),
+):
     """
-    Manually trigger a scrape job without waiting for its next scheduled run.
-    job: 'senate_daily' | 'house_daily'
+    Manually trigger a scrape job. Requires X-Scrape-Secret header matching
+    the SCRAPE_SECRET_KEY environment variable.
     """
+    secret = os.getenv("SCRAPE_SECRET_KEY")
+    if not secret or x_scrape_secret != secret:
+        raise HTTPException(403, "Forbidden")
     try:
         from backend.scheduler import trigger_now
         ok = trigger_now(job)
@@ -846,9 +927,12 @@ class ChatRequest(BaseModel):
     history: list = []
 
 @app.post("/chat")
-def chat(req: ChatRequest):
+@limiter.limit("20/minute")
+def chat(request: Request, req: ChatRequest):
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    messages = req.history + [{"role": "user", "content": req.message}]
+    # Trim history to last 20 messages to limit token usage
+    trimmed_history = req.history[-20:] if len(req.history) > 20 else req.history
+    messages = trimmed_history + [{"role": "user", "content": req.message}]
 
     while True:
         response = client.messages.create(
@@ -879,3 +963,12 @@ def chat(req: ChatRequest):
                         "content": json.dumps(result, default=str)
                     })
             messages.append({"role": "user", "content": tool_results})
+        else:
+            return {"reply": ""}
+
+
+# ── /health ───────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}

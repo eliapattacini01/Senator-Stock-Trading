@@ -133,7 +133,6 @@ function renderSummary(data) {
   document.getElementById("sumTickers").textContent  = data.positions.length;
   document.getElementById("sumBought").textContent   = fmtMoney(data.total_bought);
   document.getElementById("sumSold").textContent     = fmtMoney(data.total_sold);
-  document.getElementById("sumNet").textContent      = fmtMoney(data.net_invested);
 
   // Chamber badge – infer from members list (we can't easily get it from portfolio endpoint)
   // Just leave it blank for now
@@ -282,6 +281,19 @@ function fmtPct(pctValue, decimals = 1) {
 let _perfData   = null;
 let _perfPerson = "";
 
+// Build an interpolated disclosure series aligned to a given date array.
+// disclosure_dates / disclosure_growth may be sparser — forward-fill to match.
+function _alignDisclosure(dates, discDates, discGrowth) {
+  if (!discDates?.length || !discGrowth?.length) return dates.map(() => null);
+  const map = {};
+  discDates.forEach((d, i) => { map[d] = discGrowth[i]; });
+  let last = null;
+  return dates.map(d => {
+    if (map[d] != null) last = map[d];
+    return last;
+  });
+}
+
 function _setPeriod(period) {
   if (!_perfData) return;
 
@@ -293,6 +305,10 @@ function _setPeriod(period) {
   const allDates = _perfData.dates;
   const allPort  = _perfData.portfolio_growth.map(v => (v - 1) * 100);
   const allSpy   = _perfData.spy_growth.map(v => (v - 1) * 100);
+
+  // Align disclosure series to the same date spine
+  const rawDisc  = _alignDisclosure(allDates, _perfData.disclosure_dates, _perfData.disclosure_growth);
+  const allDisc  = rawDisc.map(v => v != null ? (v - 1) * 100 : null);
 
   // Compute start index for the chosen window
   let startIdx = 0;
@@ -312,20 +328,26 @@ function _setPeriod(period) {
   const dates    = allDates.slice(startIdx);
   let portSlice  = allPort.slice(startIdx);
   let spySlice   = allSpy.slice(startIdx);
+  let discSlice  = allDisc.slice(startIdx);
 
   // Re-normalise so the window always starts at 0%
   if (startIdx > 0 && portSlice.length) {
-    const pBase = portSlice[0], sBase = spySlice[0];
+    const pBase = portSlice[0];
+    const sBase = spySlice[0];
+    const dBase = discSlice.find(v => v != null) ?? 0;
     portSlice = portSlice.map(v => v - pBase);
     spySlice  = spySlice.map(v => v - sBase);
+    discSlice = discSlice.map(v => v != null ? v - dBase : null);
   }
 
-  const windowReturn = portSlice.length ? portSlice[portSlice.length - 1] : 0;
+  const windowReturn    = portSlice.length ? portSlice[portSlice.length - 1] : 0;
+  const windowSpyReturn = spySlice.length  ? spySlice[spySlice.length - 1]   : 0;
   const isUp    = windowReturn >= 0;
   const line    = isUp ? "#3b82f6" : "#ef4444";
   const fill    = isUp ? "rgba(59,130,246,0.08)" : "rgba(239,68,68,0.08)";
   const periods = { "1D":"today","7D":"past week","1M":"past month",
                     "1Y":"past year","5Y":"past 5 years","MAX":"all time" };
+  const periodLabel = periods[period] || "";
 
   // Update big return number
   const retEl = document.getElementById("perfTotalReturn");
@@ -334,7 +356,20 @@ function _setPeriod(period) {
     retEl.className   = `perf-return ${isUp ? "price-up" : "price-down"}`;
   }
   const wlEl = document.getElementById("perfWindowLabel");
-  if (wlEl) wlEl.textContent = periods[period] || "";
+  if (wlEl) wlEl.textContent = periodLabel;
+
+  // Update SPY return for the current window
+  const spyEl = document.getElementById("perfSpyReturn");
+  if (spyEl) spyEl.textContent = fmtPct(windowSpyReturn);
+
+  // Update portfolio return card
+  const cardEl = document.getElementById("sumPortReturn");
+  if (cardEl) {
+    cardEl.textContent = windowReturn !== 0 ? fmtPct(windowReturn) : "—";
+    cardEl.className   = `font-headline text-3xl font-extrabold ${isUp ? "price-up" : "price-down"}`;
+  }
+  const cardSubEl = document.getElementById("sumPortReturnSub");
+  if (cardSubEl) cardSubEl.textContent = periodLabel;
 
   // Update chart without animation (feels instant like a real trading app)
   if (perfInstance) {
@@ -344,6 +379,8 @@ function _setPeriod(period) {
     perfInstance.data.datasets[0].backgroundColor = fill;
     if (perfInstance.data.datasets[1])
       perfInstance.data.datasets[1].data = spySlice.map(v => +v.toFixed(2));
+    if (perfInstance.data.datasets[2])
+      perfInstance.data.datasets[2].data = discSlice.map(v => v != null ? +v.toFixed(2) : null);
     perfInstance.update("none");
   }
 }
@@ -361,7 +398,8 @@ async function renderPerformanceChart(person) {
   canvas.classList.add("d-none");
   noDataEl?.classList.add("d-none");
   ["perfTotalReturn","perfCagr","perfSpyReturn","perfSpyCagr",
-   "perfDateRange","perfNTx","perfPeriodRange","perfWindowLabel"]
+   "perfDateRange","perfNTx","perfPeriodRange","perfWindowLabel",
+   "perfDiscReturn","perfDiscCagr"]
     .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = ""; });
 
   try {
@@ -403,12 +441,25 @@ async function renderPerformanceChart(person) {
     const dateRangeEl = document.getElementById("perfDateRange");
     if (dateRangeEl) dateRangeEl.textContent = `${data.start_date} → ${data.end_date}`;
 
+    // Disclosure stats
+    const discRetPct  = (_perfData.disclosure_total_return - 1) * 100;
+    const discCagrPct = (_perfData.disclosure_cagr         - 1) * 100;
+    const discRetEl   = document.getElementById("perfDiscReturn");
+    if (discRetEl) {
+      discRetEl.textContent = fmtPct(discRetPct);
+      discRetEl.className   = `perf-stat-val ${discRetPct >= 0 ? "price-up" : "price-down"}`;
+    }
+    const discCagrEl = document.getElementById("perfDiscCagr");
+    if (discCagrEl) discCagrEl.textContent = data.disclosure_dates?.length ? fmtPct(discCagrPct) + "/yr" : "—";
+
     // Build Chart.js instance (full/MAX data; _setPeriod will slice it)
     canvas.classList.remove("d-none");
     if (perfInstance) perfInstance.destroy();
 
     const allPort = data.portfolio_growth.map(v => +((v - 1) * 100).toFixed(2));
     const allSpy  = data.spy_growth.map(v => +((v - 1) * 100).toFixed(2));
+    const rawDisc = _alignDisclosure(data.dates, data.disclosure_dates, data.disclosure_growth);
+    const allDisc = rawDisc.map(v => v != null ? +((v - 1) * 100).toFixed(2) : null);
     const totalReturn = allPort[allPort.length - 1] ?? 0;
     const isUp = totalReturn >= 0;
 
@@ -438,6 +489,18 @@ async function renderPerformanceChart(person) {
             pointRadius: 0,
             tension: 0.2,
             order: 2,
+          },
+          {
+            label: "Following Disclosures",
+            data: allDisc,
+            borderColor: "#ddb8ff",
+            backgroundColor: "transparent",
+            borderWidth: 1.5,
+            borderDash: [2, 3],
+            pointRadius: 0,
+            tension: 0.2,
+            spanGaps: true,
+            order: 3,
           },
         ],
       },

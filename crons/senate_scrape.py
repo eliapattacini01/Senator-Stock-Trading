@@ -32,7 +32,7 @@ def get_since_date() -> str:
             return since.strftime("%m/%d/%Y 00:00:00")
     except Exception as exc:
         LOGGER.warning("Could not query latest file_date: %s", exc)
-    return "01/01/2023 00:00:00"
+    return "01/01/2012 00:00:00"
 
 
 since = get_since_date()
