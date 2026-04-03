@@ -84,6 +84,9 @@
     /* Period button active state overrides Tailwind */
     .period-btn.active { background-color: #2a2a2c !important; color: #b4c5ff !important; }
 
+    /* Tab active state */
+    .lb-tab.active { background-color: #2a2a2c !important; color: #b4c5ff !important; }
+
     /* Spinner */
     .spinner    { width:2rem;height:2rem;border:3px solid rgba(180,197,255,0.15);border-top-color:#b4c5ff;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto; }
     .spinner-sm { width:1.25rem;height:1.25rem;border:2px solid rgba(180,197,255,0.15);border-top-color:#b4c5ff;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto; }
@@ -142,12 +145,12 @@
         Leaderboard Observatory
       </h1>
       <p class="text-on-surface-variant max-w-2xl text-lg leading-relaxed">
-        Analyzing the high-alpha flow of legislative capital. The top-performing members of Congress based on return on equity transactions.
+        Who in Congress is actually making money on their trades? Track the best and worst performing legislators, the stocks they keep buying, and the ones they can't wait to dump.
       </p>
     </header>
 
     <!-- Filters -->
-    <div class="flex flex-col md:flex-row gap-6 mb-12 items-end md:items-center justify-between">
+    <div class="flex flex-col md:flex-row gap-6 mb-8 items-end md:items-center justify-between">
       <div class="flex gap-2 p-1 bg-surface-container-low rounded-lg" id="lbPeriods">
         <button class="period-btn active px-4 py-2 text-xs font-label rounded-md transition-all text-on-surface-variant hover:text-on-surface" data-period="1M">1M</button>
         <button class="period-btn px-4 py-2 text-xs font-label rounded-md transition-all text-on-surface-variant hover:text-on-surface" data-period="3M">3M</button>
@@ -166,78 +169,119 @@
       </div>
     </div>
 
-    <!-- Error status -->
-    <div id="lbStatus" class="d-none mb-6 px-4 py-3 rounded-lg text-sm font-label" style="background:#93000a;color:#ffdad6;border:1px solid rgba(255,180,171,0.2);"></div>
-
-    <!-- Loading -->
-    <div id="lbLoading" class="d-none text-center py-24">
-      <div class="spinner"></div>
-      <p class="mt-4 text-sm font-label text-on-surface-variant">Computing returns…</p>
+    <!-- Tab bar -->
+    <div class="flex gap-1 p-1 rounded-lg mb-10" style="background:#131315;width:fit-content;">
+      <button id="tab-rankings" class="lb-tab active px-5 py-2 text-xs font-label rounded-md transition-all" style="color:#c3c6d8;">
+        <span class="flex items-center gap-2">
+          <span class="material-symbols-outlined" style="font-size:14px;">leaderboard</span>
+          Rankings
+        </span>
+      </button>
+      <button id="tab-buys" class="lb-tab px-5 py-2 text-xs font-label rounded-md transition-all" style="color:#8d90a1;">
+        <span class="flex items-center gap-2">
+          <span class="material-symbols-outlined" style="font-size:14px;">trending_up</span>
+          Conviction Buys
+        </span>
+      </button>
+      <button id="tab-sells" class="lb-tab px-5 py-2 text-xs font-label rounded-md transition-all" style="color:#8d90a1;">
+        <span class="flex items-center gap-2">
+          <span class="material-symbols-outlined" style="font-size:14px;">trending_down</span>
+          Mass Offloading
+        </span>
+      </button>
     </div>
 
-    <!-- Podium: rank 2 left | rank 1 center | rank 3 right -->
-    <div id="lbPodium" class="grid grid-cols-1 md:grid-cols-3 gap-8 items-end mb-20 d-none">
-      <div id="podium2" class="order-2 md:order-1 h-fit"></div>
-      <div id="podium1" class="order-1 md:order-2"></div>
-      <div id="podium3" class="order-3 md:order-3 h-fit"></div>
-    </div>
+    <!-- ── Pane 1: Rankings ─────────────────────────────────────────────────── -->
+    <div id="pane-rankings">
 
-    <!-- Rankings Table -->
-    <section class="mb-20 d-none" id="lbTableCard">
-      <div class="mb-8 flex justify-between items-end">
-        <h2 class="font-headline font-bold text-2xl tracking-tight">Comprehensive Rankings</h2>
+      <div class="mb-10">
+        <h2 class="font-headline font-bold text-2xl tracking-tight mb-2">Performance Rankings</h2>
+        <p class="text-sm text-on-surface-variant max-w-2xl leading-relaxed">
+          Legislators ranked by the weighted return on their disclosed stock purchases during the selected period. Only BUY transactions with priceable tickers are counted. Returns are dollar-weighted — larger trades carry more influence on the score.
+        </p>
       </div>
-      <div class="overflow-hidden rounded-xl bg-surface-container-low border border-outline-variant/10">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left border-collapse" id="lbTable">
-            <thead class="bg-surface-container-high/50">
-              <tr>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Rank</th>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Legislator</th>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Chamber</th>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Performance</th>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Capital Deployed</th>
-                <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant text-right">Activity</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-outline-variant/5"></tbody>
-          </table>
+
+      <!-- Error status -->
+      <div id="lbStatus" class="d-none mb-6 px-4 py-3 rounded-lg text-sm font-label" style="background:#93000a;color:#ffdad6;border:1px solid rgba(255,180,171,0.2);"></div>
+
+      <!-- Loading -->
+      <div id="lbLoading" class="d-none text-center py-24">
+        <div class="spinner"></div>
+        <p class="mt-4 text-sm font-label text-on-surface-variant">Computing returns…</p>
+      </div>
+
+      <!-- Podium: rank 2 left | rank 1 center | rank 3 right -->
+      <div id="lbPodium" class="grid grid-cols-1 md:grid-cols-3 gap-8 items-end mb-20 d-none">
+        <div id="podium2" class="order-2 md:order-1 h-fit"></div>
+        <div id="podium1" class="order-1 md:order-2"></div>
+        <div id="podium3" class="order-3 md:order-3 h-fit"></div>
+      </div>
+
+      <!-- Rankings Table -->
+      <section class="mb-20 d-none" id="lbTableCard">
+        <div class="mb-8 flex justify-between items-end">
+          <h2 class="font-headline font-bold text-2xl tracking-tight">Comprehensive Rankings</h2>
         </div>
-      </div>
-    </section>
-
-    <!-- Empty state -->
-    <div id="lbEmpty" class="d-none text-center py-24">
-      <span class="material-symbols-outlined text-5xl mb-4 block text-outline-variant">leaderboard</span>
-      <p class="font-label text-sm text-on-surface-variant">No priced transactions found for this period.</p>
-    </div>
-
-    <!-- Top Stocks -->
-    <div>
-      <h2 class="font-headline font-bold text-2xl tracking-tight mb-2">Top Stocks This Period</h2>
-      <p class="text-sm text-on-surface-variant mb-8">Most traded tickers by congress members · price change over the same window</p>
-
-      <div id="tsLoading" class="d-none text-center py-8">
-        <div class="spinner-sm"></div>
-      </div>
-
-      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8" id="tsCards">
-        <!-- Conviction Buys -->
-        <div class="glass-card rounded-xl p-8 border border-secondary/10">
-          <div class="flex items-center gap-3 mb-8">
-            <span class="material-symbols-outlined text-secondary">trending_up</span>
-            <h3 class="font-headline font-bold text-xl uppercase tracking-tight">Conviction Buys</h3>
+        <div class="overflow-hidden rounded-xl bg-surface-container-low border border-outline-variant/10">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse" id="lbTable">
+              <thead class="bg-surface-container-high/50">
+                <tr>
+                  <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Rank</th>
+                  <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Legislator</th>
+                  <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Chamber</th>
+                  <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Performance</th>
+                  <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant">Capital Deployed</th>
+                  <th class="px-6 py-4 font-label text-[11px] sm:text-xs uppercase tracking-widest text-on-surface-variant text-right">Activity</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-outline-variant/5"></tbody>
+            </table>
           </div>
-          <div id="tsBuyList" class="space-y-6"></div>
         </div>
-        <!-- Mass Offloading -->
-        <div class="glass-card rounded-xl p-8 border border-error/10">
-          <div class="flex items-center gap-3 mb-8">
-            <span class="material-symbols-outlined text-error">trending_down</span>
-            <h3 class="font-headline font-bold text-xl uppercase tracking-tight">Mass Offloading</h3>
-          </div>
-          <div id="tsSellList" class="space-y-6"></div>
+      </section>
+
+      <!-- Empty state -->
+      <div id="lbEmpty" class="d-none text-center py-24">
+        <span class="material-symbols-outlined text-5xl mb-4 block text-outline-variant">leaderboard</span>
+        <p class="font-label text-sm text-on-surface-variant">No priced transactions found for this period.</p>
+      </div>
+
+    </div>
+
+    <!-- ── Pane 2: Conviction Buys ──────────────────────────────────────────── -->
+    <div id="pane-buys" class="d-none">
+      <div class="mb-10">
+        <h2 class="font-headline font-bold text-2xl tracking-tight mb-2">Conviction Buys</h2>
+        <p class="text-sm text-on-surface-variant max-w-2xl leading-relaxed">
+          The stocks Congress members have been buying most aggressively during this period — ranked by number of trades and unique legislators involved. The price change shows how those bets have paid off so far.
+        </p>
+      </div>
+      <div id="tsLoadingBuys" class="d-none text-center py-8"><div class="spinner-sm"></div></div>
+      <div class="glass-card rounded-xl p-8 border border-secondary/10" id="tsBuysCard">
+        <div class="flex items-center gap-3 mb-8">
+          <span class="material-symbols-outlined text-secondary">trending_up</span>
+          <h3 class="font-headline font-bold text-xl uppercase tracking-tight">Top Bought Tickers</h3>
         </div>
+        <div id="tsBuyList" class="space-y-6"></div>
+      </div>
+    </div>
+
+    <!-- ── Pane 3: Mass Offloading ──────────────────────────────────────────── -->
+    <div id="pane-sells" class="d-none">
+      <div class="mb-10">
+        <h2 class="font-headline font-bold text-2xl tracking-tight mb-2">Mass Offloading</h2>
+        <p class="text-sm text-on-surface-variant max-w-2xl leading-relaxed">
+          The stocks Congress members have been selling or exiting most during this period. When multiple legislators dump the same ticker at the same time, it's worth paying attention — whether it's profit-taking or an early warning signal.
+        </p>
+      </div>
+      <div id="tsLoadingSells" class="d-none text-center py-8"><div class="spinner-sm"></div></div>
+      <div class="glass-card rounded-xl p-8 border border-error/10" id="tsSellsCard">
+        <div class="flex items-center gap-3 mb-8">
+          <span class="material-symbols-outlined text-error">trending_down</span>
+          <h3 class="font-headline font-bold text-xl uppercase tracking-tight">Top Sold Tickers</h3>
+        </div>
+        <div id="tsSellList" class="space-y-6"></div>
       </div>
     </div>
 
@@ -270,6 +314,28 @@
 <script src="legislators.js"></script>
 <script src="leaderboard.js"></script>
 <script>
+  // ── Tab switching ──────────────────────────────────────────────────────────
+  (function() {
+    const tabs = [
+      { btn: 'tab-rankings', pane: 'pane-rankings' },
+      { btn: 'tab-buys',     pane: 'pane-buys'     },
+      { btn: 'tab-sells',    pane: 'pane-sells'     },
+    ];
+    tabs.forEach(({ btn, pane }) => {
+      document.getElementById(btn).addEventListener('click', () => {
+        tabs.forEach(t => {
+          document.getElementById(t.btn).classList.remove('active');
+          document.getElementById(t.btn).style.color = '#8d90a1';
+          document.getElementById(t.pane).classList.add('d-none');
+        });
+        document.getElementById(btn).classList.add('active');
+        document.getElementById(btn).style.color = '#c3c6d8';
+        document.getElementById(pane).classList.remove('d-none');
+      });
+    });
+  })();
+
+  // ── Hamburger menu ─────────────────────────────────────────────────────────
   (function() {
     var btn = document.getElementById('menuBtn');
     var menu = document.getElementById('mobileMenu');

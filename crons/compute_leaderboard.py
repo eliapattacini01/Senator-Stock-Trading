@@ -27,7 +27,6 @@ from collections import defaultdict
 import pandas as pd
 
 from backend.db import get_connection
-from backend.performance import _price_series
 
 # ── helpers (mirrors backend/main.py) ─────────────────────────────────────────
 
@@ -117,13 +116,28 @@ def compute_leaderboard(period, today, conn, limit=50):
     unique_tickers = {t for trades in member_trades.values() for t, _, _ in trades}
     LOGGER.info("[%s] pricing %d unique tickers…", period, len(unique_tickers))
 
+    # Commit so the connection isn't idle-in-transaction during price loading
+    conn.commit()
+
+    # Bulk-load all prices in one query instead of one query per ticker
     price_map = {}
-    for ticker in unique_tickers:
-        ps = _price_series(ticker)
-        if ps is not None:
-            s = ps.set_index("date")["price"]
-            s.index = pd.to_datetime(s.index)
-            price_map[ticker] = s
+    if unique_tickers:
+        cur2 = conn.cursor()
+        cur2.execute(
+            "SELECT ticker, date, price FROM prices WHERE ticker = ANY(%s) ORDER BY ticker, date",
+            (list(unique_tickers),)
+        )
+        tmp = defaultdict(list)
+        for t, d, p in cur2.fetchall():
+            tmp[t].append((d, p))
+        for t, pairs in tmp.items():
+            s = pd.Series(
+                [p for _, p in pairs],
+                index=pd.to_datetime([d for d, _ in pairs]),
+                name="price",
+            ).sort_index()
+            price_map[t] = s
+        LOGGER.info("[%s] loaded prices from DB for %d tickers", period, len(price_map))
 
     today_ts = pd.Timestamp(today)
     results  = []
@@ -137,7 +151,14 @@ def compute_leaderboard(period, today, conn, limit=50):
             series = price_map[ticker]
             tx_ts  = pd.Timestamp(tx_date)
             try:
-                p_then = series.asof(tx_ts)
+                # Find the position asof would use, then check it isn't too stale
+                pos = series.index.searchsorted(tx_ts, side="right") - 1
+                if pos < 0:
+                    continue
+                actual_ts = series.index[pos]
+                if (tx_ts - actual_ts).days > 7:
+                    continue  # Price data too far before transaction — skip to avoid inflated returns
+                p_then = series.iloc[pos]
                 p_now  = series.asof(today_ts)
             except Exception:
                 continue

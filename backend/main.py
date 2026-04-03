@@ -4,11 +4,11 @@ import os
 import re as _re
 import time
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, List
 import anthropic
 import json
 from dotenv import load_dotenv
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 load_dotenv()
 
@@ -142,6 +142,20 @@ def _ensure_schema() -> None:
                 ALTER TABLE transactions
                 ADD COLUMN IF NOT EXISTS {col} {definition}
             """)
+        # Add unique constraint to prevent duplicate ingests (idempotent)
+        cur.execute("""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = 'uq_transactions_core'
+                ) THEN
+                    ALTER TABLE transactions
+                    ADD CONSTRAINT uq_transactions_core
+                    UNIQUE (full_name, ticker, side, tx_date, file_date);
+                END IF;
+            END $$
+        """)
         conn.commit()
     except Exception as exc:
         LOGGER.warning("Schema migration error: %s", exc)
@@ -222,7 +236,7 @@ app.add_middleware(
         "https://www.congresstocks.com",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -252,7 +266,9 @@ ALLOWED_CHAMBER = {"Senate", "House"}
 # ── /transactions ─────────────────────────────────────────────────────────────
 
 @app.get("/transactions")
+@limiter.limit("30/minute")
 def get_transactions(
+    request: Request,
     senator: str | None = Query(default=None, max_length=200),
     side:    str | None = Query(default=None, max_length=10),
     ticker:  str | None = Query(default=None, max_length=20),
@@ -554,7 +570,9 @@ def monthly_timeseries(
 # ── /portfolio ────────────────────────────────────────────────────────────────
 
 @app.get("/portfolio")
+@limiter.limit("20/minute")
 def get_portfolio(
+    request: Request,
     person: str = Query(..., min_length=1, max_length=200),
     fetch_prices: bool = Query(True),
 ):
@@ -718,7 +736,9 @@ ALLOWED_LB_PERIODS = {"1M", "3M", "YTD", "1Y"}
 
 
 @app.get("/leaderboard")
+@limiter.limit("30/minute")
 def get_leaderboard(
+    request: Request,
     period: str = Query("1M"),
     limit:  int = Query(20, ge=5, le=50),
 ):
@@ -761,7 +781,9 @@ ALLOWED_TS_PERIODS = {"1M", "3M", "YTD", "1Y"}
 
 
 @app.get("/top-stocks")
+@limiter.limit("30/minute")
 def top_stocks(
+    request: Request,
     period:  str = Query("1M"),
     top_n:   int = Query(5, ge=1, le=20),
     chamber: str | None = None,
@@ -922,19 +944,23 @@ def run_tool(name, inputs):
         return _query_top_stocks(**inputs)
     return {"error": "unknown tool"}
 
+class ChatMessage(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., max_length=20000)
+
 class ChatRequest(BaseModel):
-    message: str
-    history: list = []
+    message: str = Field(..., min_length=1, max_length=2000)
+    history: List[ChatMessage] = Field(default=[], max_length=20)
 
 @app.post("/chat")
-@limiter.limit("20/minute")
+@limiter.limit("5/minute")
 def chat(request: Request, req: ChatRequest):
     client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
-    # Trim history to last 20 messages to limit token usage
-    trimmed_history = req.history[-20:] if len(req.history) > 20 else req.history
+    trimmed_history = [{"role": m.role, "content": m.content} for m in req.history[-10:]]
     messages = trimmed_history + [{"role": "user", "content": req.message}]
 
-    while True:
+    max_iterations = 10
+    for _ in range(max_iterations):
         response = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=1024,
@@ -949,7 +975,10 @@ def chat(request: Request, req: ChatRequest):
         )
 
         if response.stop_reason == "end_turn":
-            return {"reply": response.content[0].text}
+            text_blocks = [b for b in response.content if hasattr(b, "text")]
+            if not text_blocks:
+                return {"reply": "No response generated."}
+            return {"reply": text_blocks[0].text}
 
         if response.stop_reason == "tool_use":
             messages.append({"role": "assistant", "content": response.content})
@@ -964,7 +993,11 @@ def chat(request: Request, req: ChatRequest):
                     })
             messages.append({"role": "user", "content": tool_results})
         else:
-            return {"reply": ""}
+            LOGGER.warning("Unexpected stop_reason from chat API: %s", response.stop_reason)
+            return {"reply": "An error occurred processing your request."}
+
+    LOGGER.warning("Chat endpoint exceeded max iterations")
+    return {"reply": "Request took too long to process. Please try a simpler question."}
 
 
 # ── /health ───────────────────────────────────────────────────────────────────

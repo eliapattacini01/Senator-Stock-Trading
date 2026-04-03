@@ -27,12 +27,22 @@ cutoff = _dt.date.today() - _dt.timedelta(days=730)
 conn = get_connection()
 cur  = conn.cursor()
 
+# Ensure skip table exists
+cur.execute("""
+    CREATE TABLE IF NOT EXISTS ticker_skip (
+        ticker     VARCHAR(20) PRIMARY KEY,
+        failed_at  TIMESTAMP NOT NULL
+    )
+""")
+conn.commit()
+
 # Group 1 — tickers traded in the last 2 years (keep prices fresh)
 cur.execute("""
     SELECT DISTINCT ticker FROM transactions
     WHERE ticker IS NOT NULL
       AND ticker NOT IN ('--', 'UNKNOWN', '')
       AND tx_date >= %s
+      AND ticker NOT IN (SELECT ticker FROM ticker_skip)
     ORDER BY ticker
 """, (cutoff,))
 recent_tickers = {r[0] for r in cur.fetchall()}
@@ -44,6 +54,7 @@ cur.execute("""
     WHERE t.ticker IS NOT NULL
       AND t.ticker NOT IN ('--', 'UNKNOWN', '')
       AND p.ticker IS NULL
+      AND t.ticker NOT IN (SELECT ticker FROM ticker_skip)
     ORDER BY t.ticker
 """)
 missing_tickers = {r[0] for r in cur.fetchall()}
@@ -63,6 +74,10 @@ LOGGER.info(
 
 ok = 0
 failed = 0
+newly_skipped = 0
+
+conn2 = get_connection()
+cur2  = conn2.cursor()
 
 for ticker in tickers:
     df = _download_from_stooq(ticker)
@@ -72,10 +87,24 @@ for ticker in tickers:
         _save_to_db(ticker, df)
         ok += 1
     else:
-        LOGGER.warning("No price data found for %s", ticker)
         failed += 1
+        # Only permanently skip tickers that have NEVER had price data (missing group).
+        # Recent tickers (traded in last 2 years) may fail due to transient API errors —
+        # don't blacklist them, just warn and retry next run.
+        if ticker in missing_tickers:
+            LOGGER.warning("No price data found for %s — adding to skip list", ticker)
+            cur2.execute("""
+                INSERT INTO ticker_skip (ticker, failed_at)
+                VALUES (%s, NOW())
+                ON CONFLICT (ticker) DO NOTHING
+            """, (ticker,))
+            conn2.commit()
+            newly_skipped += 1
+        else:
+            LOGGER.warning("No price data found for %s — will retry next run", ticker)
 
-LOGGER.info("Price refresh done: %d updated, %d failed", ok, failed)
+conn2.close()
+LOGGER.info("Price refresh done: %d updated, %d failed (%d added to skip list)", ok, failed, newly_skipped)
 
 # Pre-compute leaderboard and top-stocks cache now that prices are fresh
 LOGGER.info("Triggering leaderboard pre-computation…")

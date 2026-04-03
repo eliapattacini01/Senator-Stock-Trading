@@ -109,6 +109,7 @@ async function loadPortfolio() {
     renderSummary(data);
     renderDonut(data.positions);
     renderTimeline(person);
+    renderComposition(data.positions);
     renderPositionsTable(data.positions);
     renderPerformanceChart(person);   // async – runs in background, shows spinner
 
@@ -569,6 +570,68 @@ document.addEventListener("click", e => {
     _setPeriod(e.target.dataset.period);
   }
 });
+
+/* ── portfolio composition ──────────────────────────────────────────────── */
+function renderComposition(positions) {
+  console.log("[composition] called, positions:", positions?.length, "list el:", document.getElementById("compositionList"));
+  const list    = document.getElementById("compositionList");
+  const empty   = document.getElementById("compositionEmpty");
+  if (!list) return;
+
+  console.log("[composition] positions sample:", positions.slice(0, 3));
+
+  // Held positions: more buys than sells (count-based, works even when tx_estimate = 0)
+  const held = positions
+    .filter(p => (p.n_buys || 0) > (p.n_sells || 0))
+    .sort((a, b) => (b.total_bought || 0) - (a.total_bought || 0));
+
+  console.log("[composition] held count:", held.length, "from total:", positions.length);
+
+  if (held.length === 0) {
+    list.innerHTML = "";
+    empty?.classList.remove("d-none");
+    return;
+  }
+  empty?.classList.add("d-none");
+
+  const sizeOf = p => p.total_bought || 0;
+  const total  = held.reduce((s, p) => s + sizeOf(p), 0);
+
+  // Top 15 + group remainder as "Other"
+  const top   = held.slice(0, 15);
+  const rest  = held.slice(15);
+  const items = [...top];
+  if (rest.length > 0) {
+    const otherAmt = rest.reduce((s, p) => s + sizeOf(p), 0);
+    items.push({ ticker: `+${rest.length} more`, net_invested: otherAmt, total_bought: otherAmt, current_price: null, _isOther: true });
+  }
+
+  list.innerHTML = items.map((p, i) => {
+    const size     = p._isOther ? p.net_invested : sizeOf(p);
+    const pct      = total > 0 ? ((size / total) * 100).toFixed(1) : (100 / items.length).toFixed(1);
+    const color    = p._isOther ? "#4b5563" : PALETTE[i % PALETTE.length];
+    const priceStr = p.current_price != null ? `<span style="color:#8d90a1;font-size:0.7rem;margin-left:0.5rem;">${fmtPrice(p.current_price)}</span>` : "";
+    const tickerHtml = p._isOther
+      ? `<span class="font-label font-bold text-sm" style="color:#8d90a1;">${p.ticker}</span>`
+      : `<a href="timeseries.html?ticker=${encodeURIComponent(p.ticker)}" style="color:${color};font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.85rem;text-decoration:none;letter-spacing:0.06em;">${p.ticker}</a>`;
+
+    return `
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            ${tickerHtml}${priceStr}
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <span class="font-label text-xs" style="color:#8d90a1;">${total > 0 ? fmtMoney(size) : ""}</span>
+            <span class="font-label font-bold text-sm" style="color:${color};min-width:3.5rem;text-align:right;">${pct}%</span>
+          </div>
+        </div>
+        <div style="height:6px;background:rgba(67,70,85,0.2);border-radius:9999px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:${color};border-radius:9999px;transition:width 0.6s ease;"></div>
+        </div>
+      </div>`;
+  }).join("");
+}
 
 /* ── positions table ────────────────────────────────────────────────────── */
 function renderPositionsTable(positions) {

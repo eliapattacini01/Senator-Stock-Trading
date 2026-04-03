@@ -281,18 +281,22 @@ function renderTickerList(rows, containerId) {
 }
 
 async function loadTopStocks() {
-  document.getElementById("tsLoading")?.classList.remove("d-none");
-  document.getElementById("tsCards")?.classList.add("d-none");
+  document.getElementById("tsLoadingBuys")?.classList.remove("d-none");
+  document.getElementById("tsLoadingSells")?.classList.remove("d-none");
+  document.getElementById("tsBuysCard")?.classList.add("d-none");
+  document.getElementById("tsSellsCard")?.classList.add("d-none");
   try {
-    const url = `${LB_API}/top-stocks?period=${_lbPeriod}&top_n=5${_lbChamber ? "&chamber=" + encodeURIComponent(_lbChamber) : ""}`;
+    const url = `${LB_API}/top-stocks?period=${_lbPeriod}&top_n=10${_lbChamber ? "&chamber=" + encodeURIComponent(_lbChamber) : ""}`;
     const data = await fetch(url).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
     renderTickerList(data.buys,  "tsBuyList");
     renderTickerList(data.sells, "tsSellList");
-    document.getElementById("tsCards")?.classList.remove("d-none");
+    document.getElementById("tsBuysCard")?.classList.remove("d-none");
+    document.getElementById("tsSellsCard")?.classList.remove("d-none");
   } catch (err) {
     console.warn("Top stocks error:", err);
   } finally {
-    document.getElementById("tsLoading")?.classList.add("d-none");
+    document.getElementById("tsLoadingBuys")?.classList.add("d-none");
+    document.getElementById("tsLoadingSells")?.classList.add("d-none");
   }
 }
 
