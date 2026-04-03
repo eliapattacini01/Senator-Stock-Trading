@@ -450,7 +450,7 @@
           return `
             <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:10px;background:#0e0e10;border:1px solid rgba(67,70,85,0.2);">
               <div style="display:flex;align-items:center;gap:10px;">
-                <a href="timeseries.html?ticker=${encodeURIComponent(r.ticker)}" onclick="event.stopPropagation();"
+                <a href="charts.html?ticker=${encodeURIComponent(r.ticker)}" onclick="event.stopPropagation();"
                    style="width:36px;height:36px;border-radius:8px;background:#1b1b1d;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.6rem;color:${tickerColor};text-decoration:none;flex-shrink:0;">${r.ticker}</a>
                 <div>
                   <p style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:0.75rem;color:#e5e1e4;margin:0 0 3px;">${r.ticker} ${sideLabel}</p>
