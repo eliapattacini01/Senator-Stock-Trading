@@ -458,7 +458,7 @@
         const isBuy  = t.side === "BUY";
         const avatar = window.memberAvatarHtml?.(t.full_name, 36) ?? `<div style="width:36px;height:36px;border-radius:50%;background:#353437;display:flex;align-items:center;justify-content:center;flex-shrink:0"><span class="material-symbols-outlined" style="font-size:18px;color:#8d90a1">person</span></div>`;
         return `
-          <a href="portfolio.html?person=${encodeURIComponent(t.full_name)}" class="flex items-center justify-between p-4 rounded-2xl hover:bg-surface-container-high transition-colors cursor-pointer group">
+          <a href="portfolio.html?person=${encodeURIComponent(t.full_name)}" class="flex flex-col sm:flex-row sm:items-center sm:justify-between p-4 rounded-2xl hover:bg-surface-container-high transition-colors cursor-pointer group gap-2 sm:gap-0">
             <div class="flex items-center gap-3 min-w-0">
               ${avatar}
               <div class="min-w-0">
@@ -466,10 +466,14 @@
                 <p class="text-xs text-on-surface-variant font-label">${t.chamber ?? ""}</p>
               </div>
             </div>
-            <div class="text-center flex-shrink-0 px-3">
-              <p class="bg-surface-container-highest px-3 py-1 rounded font-bold font-label tracking-wide text-sm">$${t.ticker ?? "—"}</p>
+            <div class="flex items-center justify-between sm:block sm:text-center sm:flex-shrink-0 sm:px-3 pl-12 sm:pl-0">
+              <span class="bg-surface-container-highest px-3 py-1 rounded font-bold font-label tracking-wide text-sm">$${t.ticker ?? "—"}</span>
+              <div class="flex items-center gap-3 sm:hidden">
+                <span class="font-bold text-sm ${isBuy ? "text-secondary" : "text-error"}">${t.side}</span>
+                <span class="text-xs text-on-surface-variant font-label">${t.tx_date ?? ""}</span>
+              </div>
             </div>
-            <div class="text-right flex-shrink-0">
+            <div class="hidden sm:block text-right flex-shrink-0">
               <p class="font-bold text-sm ${isBuy ? "text-secondary" : "text-error"}">${t.side}</p>
               <p class="text-xs text-on-surface-variant font-label">${t.tx_date ?? ""}</p>
             </div>
