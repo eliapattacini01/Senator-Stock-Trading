@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://congressstocks.com/sitemap.xml
+Sitemap: https://congresstocks.com/sitemap.xml
