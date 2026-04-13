@@ -145,6 +145,11 @@ def ingest_to_db(df: pd.DataFrame, chamber: str = "Senate") -> int:
                     skipped += 1
                     continue
 
+                # Skip rows with future file_date (scraping artifacts)
+                if file_date and file_date > date.today():
+                    skipped += 1
+                    continue
+
                 # Use a savepoint so a single bad row doesn't abort the whole tx
                 try:
                     cur.execute("SAVEPOINT sp")

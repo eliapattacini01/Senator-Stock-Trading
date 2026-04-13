@@ -1,196 +1,202 @@
-""" Scrape the stock transactions from Senator periodic filings. """
+"""
+Senate stock transaction scraper — efdsearch.senate.gov via Playwright.
 
-from bs4 import BeautifulSoup
+Uses a headful (visible) Chromium browser to bypass Akamai bot protection.
+Replicates the original flow: accept the prohibition agreement, then POST
+to the report data API using the session CSRF token.
+"""
 
 import logging
-import pandas as pd
 import pickle
-import requests
 import time
-from typing import Any, List, Optional
+from datetime import datetime
+from typing import Optional
 
-
-ROOT = 'https://efdsearch.senate.gov'
-LANDING_PAGE_URL = '{}/search/home/'.format(ROOT)
-SEARCH_PAGE_URL = '{}/search/'.format(ROOT)
-REPORTS_URL = '{}/search/report/data/'.format(ROOT)
-
-BATCH_SIZE = 100
-RATE_LIMIT_SECS = 2
-
-PDF_PREFIX = '/search/view/paper/'
-LANDING_PAGE_FAIL = 'Failed to fetch filings landing page'
-
-REPORT_COL_NAMES = [
-    'tx_date',
-    'file_date',
-    'last_name',
-    'first_name',
-    'order_type',
-    'ticker',
-    'asset_name',
-    'tx_amount'
-]
+import pandas as pd
+from playwright.sync_api import sync_playwright, Page
 
 LOGGER = logging.getLogger(__name__)
 
+ROOT              = "https://efdsearch.senate.gov"
+LANDING_PAGE_URL  = f"{ROOT}/search/home/"
+SEARCH_PAGE_URL   = f"{ROOT}/search/"
+REPORTS_URL       = f"{ROOT}/search/report/data/"
+PDF_PREFIX        = "/search/view/paper/"
 
-def add_rate_limit(f):
-    def with_rate_limit(*args, **kw):
-        time.sleep(RATE_LIMIT_SECS)
-        return f(*args, **kw)
-    return with_rate_limit
+BATCH_SIZE      = 100
+RATE_LIMIT_SECS = 2
+
+REPORT_COL_NAMES = [
+    "tx_date", "file_date", "last_name", "first_name",
+    "order_type", "ticker", "asset_name", "tx_amount",
+]
 
 
-def _csrf(client: requests.Session) -> str:
-    """ Set the session ID and return the CSRF token for this session. """
-    landing_page_response = client.get(LANDING_PAGE_URL)
-    assert landing_page_response.url == LANDING_PAGE_URL, LANDING_PAGE_FAIL
+def _parse_since(since_date: str) -> datetime:
+    for fmt in ("%m/%d/%Y %H:%M:%S", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(since_date.strip(), fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"Unrecognised since_date format: {since_date!r}")
 
-    landing_page = BeautifulSoup(landing_page_response.text, 'lxml')
-    form_csrf = landing_page.find(
-        attrs={'name': 'csrfmiddlewaretoken'}
-    )['value']
-    form_payload = {
-        'csrfmiddlewaretoken': form_csrf,
-        'prohibition_agreement': '1'
+
+def _accept_agreement(page: Page) -> str:
+    """
+    Navigate to the landing page, accept the prohibition agreement,
+    and return the CSRF token from the session cookie.
+    """
+    LOGGER.info("  Loading eFD landing page…")
+    page.goto(LANDING_PAGE_URL, wait_until="domcontentloaded", timeout=30000)
+    time.sleep(2)
+
+    # Extract CSRF token from the form
+    csrf = page.input_value("input[name='csrfmiddlewaretoken']")
+    LOGGER.info("  Got CSRF token: %s…", csrf[:10])
+
+    # Submit the prohibition agreement form
+    page.check("input[name='prohibition_agreement']")
+    page.click("button[type='submit'], input[type='submit']")
+    time.sleep(2)
+
+    # Get CSRF cookie (may be 'csrftoken' or 'csrf')
+    cookies = {c["name"]: c["value"] for c in page.context.cookies()}
+    token = cookies.get("csrftoken") or cookies.get("csrf") or csrf
+    return token
+
+
+def _reports_api(page: Page, offset: int, token: str, since_date: str) -> list:
+    """POST to the reports API and return the data list."""
+    payload = {
+        "start":                str(offset),
+        "length":               str(BATCH_SIZE),
+        "report_types":         "[11]",
+        "filer_types":          "[]",
+        "submitted_start_date": since_date,
+        "submitted_end_date":   "",
+        "candidate_state":      "",
+        "senator_state":        "",
+        "office_id":            "",
+        "first_name":           "",
+        "last_name":            "",
+        "csrfmiddlewaretoken":  token,
     }
-    client.post(LANDING_PAGE_URL,
-                data=form_payload,
-                headers={'Referer': LANDING_PAGE_URL})
-
-    if 'csrftoken' in client.cookies:
-        csrftoken = client.cookies['csrftoken']
-    else:
-        csrftoken = client.cookies['csrf']
-    return csrftoken
-
-
-def senator_reports(client: requests.Session, since_date: str = '01/01/2012 00:00:00') -> List[List[str]]:
-    """ Return all results from the periodic transaction reports API. """
-    token = _csrf(client)
-    idx = 0
-    reports = reports_api(client, idx, token, since_date)
-    all_reports: List[List[str]] = []
-    while len(reports) != 0:
-        all_reports.extend(reports)
-        idx += BATCH_SIZE
-        reports = reports_api(client, idx, token, since_date)
-    return all_reports
+    # Use page.evaluate to make an authenticated fetch from within the browser session
+    result = page.evaluate(
+        """
+        async ([url, payload]) => {
+            const form = new URLSearchParams(payload);
+            const resp = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Referer': 'https://efdsearch.senate.gov/search/',
+                    'X-CSRFToken': payload.csrfmiddlewaretoken,
+                },
+                body: form.toString(),
+            });
+            return await resp.json();
+        }
+        """,
+        [REPORTS_URL, payload],
+    )
+    return result.get("data", [])
 
 
-def reports_api(
-    client: requests.Session,
-    offset: int,
-    token: str,
-    since_date: str = '01/01/2012 00:00:00',
-) -> List[List[str]]:
-    """ Query the periodic transaction reports API. """
-    login_data = {
-        'start': str(offset),
-        'length': str(BATCH_SIZE),
-        'report_types': '[11]',
-        'filer_types': '[]',
-        'submitted_start_date': since_date,
-        'submitted_end_date': '',
-        'candidate_state': '',
-        'senator_state': '',
-        'office_id': '',
-        'first_name': '',
-        'last_name': '',
-        'csrfmiddlewaretoken': token
-    }
-    LOGGER.info('Getting rows starting at {}'.format(offset))
-    response = client.post(REPORTS_URL,
-                           data=login_data,
-                           headers={'Referer': SEARCH_PAGE_URL})
-    return response.json()['data']
+def _txs_for_report(page: Page, row: list) -> pd.DataFrame:
+    """Fetch the individual PTR page and parse its transactions."""
+    from bs4 import BeautifulSoup
 
-
-def _tbody_from_link(client: requests.Session, link: str) -> Optional[Any]:
-    """
-    Return the tbody element containing transactions for this senator.
-    Return None if no such tbody element exists.
-    """
-    report_url = '{0}{1}'.format(ROOT, link)
-    report_response = client.get(report_url)
-    # If the page is redirected, then the session ID has expired
-    if report_response.url == LANDING_PAGE_URL:
-        LOGGER.info('Resetting CSRF token and session cookie')
-        _csrf(client)
-        report_response = client.get(report_url)
-    report = BeautifulSoup(report_response.text, 'lxml')
-    tbodies = report.find_all('tbody')
-    if len(tbodies) == 0:
-        return None
-    return tbodies[0]
-
-
-def txs_for_report(client: requests.Session, row: List[str]) -> pd.DataFrame:
-    """
-    Convert a row from the periodic transaction reports API to a DataFrame
-    of transactions.
-    """
     first, last, _, link_html, date_received = row
-    link = BeautifulSoup(link_html, 'lxml').a.get('href')
-    # We cannot parse PDFs
-    if link[:len(PDF_PREFIX)] == PDF_PREFIX:
+    from bs4 import BeautifulSoup as BS
+    link = BS(link_html, "lxml").a.get("href")
+
+    if link.startswith(PDF_PREFIX):
         return pd.DataFrame()
 
-    tbody = _tbody_from_link(client, link)
-    if not tbody:
+    report_url = f"{ROOT}{link}"
+    html = page.evaluate(
+        """
+        async (url) => {
+            const resp = await fetch(url);
+            return await resp.text();
+        }
+        """,
+        report_url,
+    )
+    time.sleep(RATE_LIMIT_SECS)
+
+    soup = BeautifulSoup(html, "lxml")
+    tbodies = soup.find_all("tbody")
+    if not tbodies:
         return pd.DataFrame()
 
     stocks = []
-    for table_row in tbody.find_all('tr'):
-        cols = [c.get_text(" ", strip=True) for c in table_row.find_all('td')]
-        tx_date, ticker, asset_name, asset_type, order_type, tx_amount =\
-            cols[1], cols[3], cols[4], cols[5], cols[6], cols[7]
-        if asset_type != 'Stock' and ticker.strip() in ('--', ''):
+    for tr in tbodies[0].find_all("tr"):
+        cols = [c.get_text(" ", strip=True) for c in tr.find_all("td")]
+        if len(cols) < 8:
             continue
-        stocks.append([
-            tx_date,
-            date_received,
-            last,
-            first,
-            order_type,
-            ticker,
-            asset_name,
-            tx_amount
-        ])
-    return pd.DataFrame(stocks).rename(
-        columns=dict(enumerate(REPORT_COL_NAMES)))
+        tx_date, ticker, asset_name, asset_type, order_type, tx_amount = (
+            cols[1], cols[3], cols[4], cols[5], cols[6], cols[7]
+        )
+        if asset_type != "Stock" and ticker.strip() in ("--", ""):
+            continue
+        stocks.append([tx_date, date_received, last, first, order_type, ticker, asset_name, tx_amount])
+
+    return pd.DataFrame(stocks).rename(columns=dict(enumerate(REPORT_COL_NAMES)))
 
 
-def main(since_date: str = '01/01/2012 00:00:00') -> pd.DataFrame:
-    LOGGER.info("Initializing client (since_date=%s)", since_date)
-    client = requests.Session()
-    client.get = add_rate_limit(client.get)
-    client.post = add_rate_limit(client.post)
+def main(since_date: str = "01/01/2012 00:00:00") -> pd.DataFrame:
+    LOGGER.info("Initializing Playwright browser (since_date=%s)", since_date)
 
-    reports = senator_reports(client, since_date)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=False)
+        context = browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/122.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 800},
+            locale="en-US",
+        )
+        page = context.new_page()
 
-    frames = []
-    n_rows = 0  # running counter for logs
+        token = _accept_agreement(page)
 
-    for i, row in enumerate(reports):
-        if i % 10 == 0:
-            LOGGER.info("Fetching report #%d", i)
-            LOGGER.info("%d transactions total (so far)", n_rows)
+        # Paginate through all reports
+        all_reports = []
+        offset = 0
+        while True:
+            LOGGER.info("  Fetching report list at offset %d…", offset)
+            batch = _reports_api(page, offset, token, since_date)
+            if not batch:
+                break
+            all_reports.extend(batch)
+            offset += BATCH_SIZE
+            time.sleep(RATE_LIMIT_SECS)
 
-        txs = txs_for_report(client, row)
-        if not txs.empty:
-            frames.append(txs)
-            n_rows += len(txs)
+        LOGGER.info("  %d PTR filings found", len(all_reports))
 
-    all_txs = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=REPORT_COL_NAMES)
-    return all_txs
+        frames = []
+        n_rows = 0
+        for i, row in enumerate(all_reports):
+            if i % 10 == 0:
+                LOGGER.info("  Report %d/%d (%d transactions so far)", i, len(all_reports), n_rows)
+            txs = _txs_for_report(page, row)
+            if not txs.empty:
+                frames.append(txs)
+                n_rows += len(txs)
+
+        browser.close()
+
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=REPORT_COL_NAMES)
 
 
-if __name__ == '__main__':
-    log_format = '[%(asctime)s %(levelname)s] %(message)s'
-    logging.basicConfig(level=logging.INFO, format=log_format)
-    senator_txs = main()
-    LOGGER.info('Dumping to .pickle')
-    with open('Scraping/notebooks/senators2.pickle', 'wb') as f:
-        pickle.dump(senator_txs, f)
+if __name__ == "__main__":
+    import logging as _logging
+    _logging.basicConfig(level=_logging.INFO, format="[%(asctime)s %(levelname)s] %(message)s")
+    df = main()
+    LOGGER.info("Dumping to .pickle")
+    with open("Scraping/notebooks/senators2.pickle", "wb") as f:
+        pickle.dump(df, f)

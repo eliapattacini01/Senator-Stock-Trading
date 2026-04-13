@@ -29,7 +29,7 @@ def get_from_year() -> int:
         conn.close()
         if row and row[0]:
             since = row[0] - dt.timedelta(days=7)
-            return since.year
+            return min(since.year, dt.date.today().year)
     except Exception as exc:
         LOGGER.warning("Could not query latest file_date: %s", exc)
     return 2020
