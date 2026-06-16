@@ -54,9 +54,12 @@ def _accept_agreement(page: Page) -> str:
     csrf = page.input_value("input[name='csrfmiddlewaretoken']")
     LOGGER.info("  Got CSRF token: %s…", csrf[:10])
 
-    # Submit the prohibition agreement form
-    page.check("input[name='prohibition_agreement']")
-    page.click("button[type='submit'], input[type='submit']")
+    # Submit the prohibition agreement form via JS to avoid Playwright navigation-wait timeouts
+    page.evaluate("""
+        document.querySelector('input[name="prohibition_agreement"]').checked = true;
+        document.querySelector('form').submit();
+    """)
+    page.wait_for_url("**/search/**", wait_until="domcontentloaded", timeout=60000)
     time.sleep(2)
 
     # Get CSRF cookie (may be 'csrftoken' or 'csrf')
