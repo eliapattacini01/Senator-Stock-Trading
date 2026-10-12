@@ -307,12 +307,19 @@ def sync_prices(
                  incremental=0, readjusted=0, rows_written=0, misses=0,
                  newly_unavailable=0, transient=0, dry_run=dry_run)
 
+    revived = []           # ticker_status rows of tickers re-enabled below
     for t, first in first_tx.items():
         st = statuses.get(t)
+        lo, hi = stored.get(t, (None, None))
+        if st and st.unavailable and hi and (ref - hi).days < STALE_DAYS:
+            # Marked unavailable but its prices are recent (e.g. a stale legacy
+            # ticker_skip entry): it is evidently available, re-enable it.
+            st.unavailable, st.fail_count, st.reason = False, 0, None
+            revived.append((t, False, None, 0, st.last_attempt, st.last_success, st.history_from))
+            LOGGER.warning("%s re-enabled: marked unavailable but has prices up to %s", t, hi)
         if st and st.unavailable and not include_unavailable:
             stats["skipped_unavailable"] += 1
             continue
-        lo, hi = stored.get(t, (None, None))
         covered_from = min(d for d in (lo, st.history_from if st else None) if d) if lo else None
         start = max(first - _dt.timedelta(days=HEAD_MARGIN_DAYS), HISTORY_FLOOR)
         if full or lo is None or first < covered_from - _dt.timedelta(days=HEAD_SLACK_DAYS):
@@ -326,6 +333,13 @@ def sync_prices(
         "%d tickers: %d up to date, %d unavailable (skipped), %d incremental, %d full download",
         len(first_tx), stats["up_to_date"], stats["skipped_unavailable"], len(inc_jobs), len(full_jobs),
     )
+    stats["re_enabled"] = len(revived)
+    if revived and not dry_run:
+        conn = get_connection()
+        try:
+            _write(conn, [], [], revived)
+        finally:
+            conn.close()
 
     now = _dt.datetime.now(_dt.timezone.utc)
     failed_batches = 0
