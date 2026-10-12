@@ -5,14 +5,19 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    # Single worker (gunicorn default): in-process caches and rate limits are shared by all requests
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker backend.main:app --bind 0.0.0.0:$PORT
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.4
       - key: DATABASE_URL
         sync: false          # set manually in Render dashboard
       - key: RENDER
         value: true          # disables APScheduler (cron jobs handle it)
       - key: ANTHROPIC_API_KEY
         sync: false          # set manually in Render dashboard
+      - key: BLOCKED_IPS
+        sync: false          # comma-separated IPs answered with 403
 
   # ── Cron Jobs ──────────────────────────────────────────────────────────────
   # Times are UTC. ET = UTC-5 (winter) / UTC-4 (summer).
