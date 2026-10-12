@@ -119,13 +119,14 @@ def compute_leaderboard(period, today, conn, limit=50):
     # Commit so the connection isn't idle-in-transaction during price loading
     conn.commit()
 
-    # Bulk-load all prices in one query instead of one query per ticker
+    # Bulk-load all prices in one query instead of one query per ticker.
+    # Only the period is needed: p_then is at most 7 days before a tx_date >= start.
     price_map = {}
     if unique_tickers:
         cur2 = conn.cursor()
         cur2.execute(
-            "SELECT ticker, date, price FROM prices WHERE ticker = ANY(%s) ORDER BY ticker, date",
-            (list(unique_tickers),)
+            "SELECT ticker, date, price FROM prices WHERE ticker = ANY(%s) AND date >= %s ORDER BY ticker, date",
+            (list(unique_tickers), start - _dt.timedelta(days=10))
         )
         tmp = defaultdict(list)
         for t, d, p in cur2.fetchall():

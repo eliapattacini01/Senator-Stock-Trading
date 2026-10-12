@@ -20,8 +20,24 @@ The app auto-creates/migrates tables on startup via `_ensure_schema()` in `backe
 python crons/senate_scrape.py
 python crons/house_scrape.py
 python crons/quiverquant_scrape.py
-python crons/refresh_prices.py        # also triggers compute_leaderboard.py
+python crons/refresh_prices.py        # incremental price update, then triggers compute_leaderboard.py
 python crons/compute_leaderboard.py   # standalone leaderboard recompute
+```
+
+One-off price backfill (run from a local machine, not on Render):
+
+```bash
+python crons/backfill_prices.py --dry-run        # show what would change
+python crons/backfill_prices.py                  # migrate + fill every gap, retry unavailable tickers
+python crons/backfill_prices.py --tickers AAPL   # only some tickers; --full re-downloads everything
+python crons/backfill_prices.py --migrate-only   # only apply database/migration_price_store.sql
+```
+
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest   # tests/ — fake DB, no DATABASE_URL needed
 ```
 
 ## Running the Name/Data Cleanup Script
@@ -36,8 +52,9 @@ python fix_names.py   # strips leading dots, removes duplicates, fixes bad dates
 
 ### Backend (`backend/`)
 - `main.py` — FastAPI app. All API endpoints live here. Also contains name-normalisation helpers (`_norm`, `_norm_key`, `_name_variants`) used to deduplicate name variants (e.g. "Shelley M. Capito" vs "Shelley Moore Capito"). On non-Render environments, also starts APScheduler.
-- `performance.py` — Portfolio simulation engine. Simulates a buy-and-hold portfolio from transaction history and computes period returns vs SPY benchmark. Price data is fetched from Stooq with yfinance as fallback.
-- `db.py` — Single `get_connection()` function returning a psycopg connection.
+- `performance.py` — Portfolio simulation engine. Simulates a buy-and-hold portfolio from transaction history and computes period returns vs SPY benchmark. Reads prices **only** from the `prices` table (per-process cache, `PRICE_CACHE_TTL` / `PRICE_CACHE_MAX_TICKERS`); it never downloads.
+- `price_updater.py` — Yahoo Finance (yfinance) → `prices` sync, used only by `crons/refresh_prices.py` and `crons/backfill_prices.py`. Incremental per ticker, batched `yf.download`, re-downloads a ticker in full when Yahoo re-adjusts its history (split/dividend), marks delisted tickers in `ticker_status`.
+- `db.py` — `get_connection()`: pooled connection in the web app (`psycopg_pool` with `check=ConnectionPool.check_connection`, so connections Neon closed are replaced), direct connection in scripts.
 - `scheduler.py` — APScheduler config for local dev (Render uses cron jobs instead).
 
 ### Scraping (`Scraping/`)
@@ -56,7 +73,8 @@ Static HTML/JS pages. All data fetched from the FastAPI backend. Pages: `index.h
 | Table | Notes |
 |-------|-------|
 | `transactions` | Core data. `chamber` is `'Senate'` or `'House'`. `side` is `'BUY'` or `'SELL'`. `tx_estimate` is midpoint integer (dollars). |
-| `prices` | Daily OHLCV prices per ticker. SPY always present as benchmark. |
+| `prices` | `(ticker, date, price)` — daily adjusted close (yfinance `auto_adjust=True`). SPY always present as benchmark. Written only by the price crons. |
+| `ticker_status` | Per-ticker download state; `unavailable = TRUE` tickers are skipped by the daily job. Schema in `database/migration_price_store.sql` (replaces the legacy `ticker_skip`). |
 | `leaderboard_cache` | Pre-computed returns per member per period (`1M`, `3M`, `YTD`, `1Y`). Must be recomputed after price refresh. |
 | `top_stocks_cache` | Pre-computed top-5 bought/sold tickers per period. Recomputed alongside leaderboard. |
 
@@ -69,4 +87,6 @@ Defined in `render.yaml`. Web service runs `uvicorn backend.main:app`. Four dail
 - **Name deduplication:** The same person can appear under multiple name variants in the DB. `_norm_key()` groups them by `(first_token, last_token)`. When querying by person, always use `_name_variants()` to get all variants.
 - **leaderboard_cache dirty data:** If names are fixed in `transactions`, the same fix must be applied to `leaderboard_cache` (it's a separate table with its own `full_name` column).
 - **House name artifacts:** House PTR HTML can produce leading `.` or `..` in names. `ingest.py` strips these with `re.sub(r'^[^a-zA-Z]+', '', ...)`. Run `fix_names.py` to clean existing DB data.
-- **No test framework:** `test_chat.py` is an ad-hoc script, not a pytest suite.
+- **No downloads in the request path:** API endpoints must never call yfinance/Stooq or any external price source (a bot scanning `/portfolio/performance` once burned the Render bandwidth quota). `tests/test_performance_no_yfinance.py` enforces it.
+- **Rate limiting / client IP:** Render's edge is Cloudflare, so `_client_ip()` keys limits on `CF-Connecting-IP` (then `X-Forwarded-For`). Env: `BLOCKED_IPS` (comma-separated, 403), `LOG_CLIENT_IP_HEADERS=1` (debug log), `PERF_CACHE_TTL`, `CACHE_MAX_ENTRIES`. Caches and limits are per worker process.
+- **Tests:** `tests/` is a pytest suite; `test_chat.py` is still an ad-hoc script.

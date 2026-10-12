@@ -24,10 +24,15 @@ def init_pool() -> None:
             max_size=10,
             open=True,
             kwargs={"autocommit": True},  # avoids implicit transactions + recommended by Neon
+            # Ping every connection before lending it out: Neon closes connections when the
+            # compute suspends, and a dead one is discarded and replaced instead of failing
+            # the request with "SSL connection has been closed unexpectedly".
+            check=ConnectionPool.check_connection,
             max_idle=180,                 # recycle idle connections every 3 min (Neon kills at ~5 min)
+            max_lifetime=1800,
             reconnect_timeout=30,
         )
-        LOGGER.info("DB connection pool initialized (min=2, max=10)")
+        LOGGER.info("DB connection pool initialized (min=1, max=10)")
     except Exception as exc:
         LOGGER.warning("Could not initialize pool (%s) — will use direct connections", exc)
 
@@ -43,6 +48,37 @@ def close_pool() -> None:
         _pool = None
 
 
+class _PooledConnection:
+    """
+    Proxy around a pooled psycopg connection: close() hands the connection back
+    to the pool instead of closing it; everything else is delegated.
+
+    (Patching close() on the connection itself would also hijack the pool's own
+    close() call when it discards a dead connection, leaking it.)
+    """
+    __slots__ = ("_pool", "_conn")
+
+    def __init__(self, pool, conn):
+        self._pool = pool
+        self._conn = conn
+
+    def __getattr__(self, name):
+        if self._conn is None:
+            raise psycopg.InterfaceError("connection already returned to the pool")
+        return getattr(self._conn, name)
+
+    def close(self) -> None:
+        conn, self._conn = self._conn, None
+        if conn is not None:
+            self._pool.putconn(conn)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
+
+
 def get_connection():
     """
     Return a DB connection.
@@ -50,15 +86,7 @@ def get_connection():
     - Otherwise: opens a direct connection (fallback for cron scripts or missing pool).
     """
     if _pool and not _pool.closed:
-        conn = _pool.getconn()
-        # Patch close() so callers can use conn.close() to return it to the pool
-        def _return_to_pool():
-            try:
-                _pool.putconn(conn)
-            except Exception:
-                pass
-        conn.close = _return_to_pool
-        return conn
+        return _PooledConnection(_pool, _pool.getconn())
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise RuntimeError("DATABASE_URL is not set.")

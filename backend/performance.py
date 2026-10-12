@@ -1,12 +1,13 @@
 """
 Portfolio-performance simulation — mirrors the notebook's return_for_senator() logic.
 
-Price source priority:
-  1. In-memory lru_cache (per process)
-  2. PostgreSQL `prices` table  (persists across restarts — works on Render)
-  3. Local pickle files in Scraping/notebooks/stocks/  (local dev migration)
-  4. Fresh download from Stooq
-  5. yfinance fallback (mutual funds, ETFs Stooq doesn't carry)
+Prices are read ONLY from the PostgreSQL `prices` table (adjusted daily closes),
+which crons/refresh_prices.py keeps up to date. Nothing in this module downloads
+data: serving an HTTP request must never call Yahoo / Stooq.
+
+Loaded series are kept in a per-process cache (PRICE_CACHE_TTL seconds, at most
+PRICE_CACHE_MAX_TICKERS tickers), and all tickers a simulation needs are fetched
+with a single query.
 
 Algorithm:
   - Walk transactions in chronological order
@@ -15,24 +16,23 @@ Algorithm:
   - Compare against SPY normalized over the same date range
 """
 
-import datetime as _dt
 import logging
 import os
-import pickle
+import threading
 import time
-from functools import lru_cache
-from typing import Optional
+from collections import OrderedDict
+from typing import Iterable, Optional
 
 import numpy as np
 import pandas as pd
 
+from backend.db import get_connection
+
 LOGGER = logging.getLogger(__name__)
 
-_ROOT      = os.path.dirname(os.path.dirname(__file__))
-STOCKS_DIR = os.path.join(_ROOT, "Scraping", "notebooks", "stocks")
-
-# Re-fetch from source if latest DB price is older than this many days
-_PRICE_STALE_DAYS = 2
+PRICE_CACHE_TTL         = int(os.getenv("PRICE_CACHE_TTL", 6 * 3600))  # seconds
+PRICE_CACHE_MAX_TICKERS = int(os.getenv("PRICE_CACHE_MAX_TICKERS", 1000))  # ~30 KB per ticker
+_QUERY_CHUNK = 200  # tickers per query, bounds the rows held in memory at once
 
 # STOCK-Act dollar buckets (for "Full sale" detection)
 _BUCKETS = [
@@ -43,232 +43,122 @@ _BUCKETS = [
 ]
 
 
-# ── price data ─────────────────────────────────────────────────────────────────
-
-def _cache_path(ticker: str) -> str:
-    return os.path.join(STOCKS_DIR, f"{ticker}.pickle")
-
-
-def _df_from_pickle(path: str) -> Optional[pd.DataFrame]:
-    try:
-        with open(path, "rb") as f:
-            raw = pickle.load(f)["price"]
-        out = raw[["Date", "Close"]].rename(columns={"Date": "date", "Close": "price"})
-        out["date"]  = pd.to_datetime(out["date"], errors="coerce")
-        out["price"] = pd.to_numeric(out["price"], errors="coerce")
-        return out.dropna(subset=["date", "price"]).sort_values("date").reset_index(drop=True)
-    except Exception as exc:
-        LOGGER.debug("Cache read failed (%s): %s", path, exc)
-        return None
-
+# ── price data (read-only) ─────────────────────────────────────────────────────
 
 def ensure_prices_table() -> None:
     """Create the prices table in PostgreSQL if it doesn't exist yet."""
     try:
-        from backend.db import get_connection
         conn = get_connection()
-        cur  = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS prices (
-                ticker VARCHAR(20)       NOT NULL,
-                date   DATE              NOT NULL,
-                price  DOUBLE PRECISION  NOT NULL,
-                PRIMARY KEY (ticker, date)
-            )
-        """)
-        conn.commit()
-        conn.close()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS prices (
+                    ticker VARCHAR(20)       NOT NULL,
+                    date   DATE              NOT NULL,
+                    price  DOUBLE PRECISION  NOT NULL,
+                    PRIMARY KEY (ticker, date)
+                )
+            """)
+            conn.commit()
+        finally:
+            conn.close()
     except Exception as exc:
         LOGGER.warning("Could not ensure prices table: %s", exc)
 
 
-def _load_from_db(ticker: str) -> Optional[pd.DataFrame]:
-    """Load full price history for a ticker from the PostgreSQL prices table."""
-    try:
-        from backend.db import get_connection
-        conn = get_connection()
-        cur  = conn.cursor()
-        cur.execute(
-            "SELECT date, price FROM prices WHERE ticker = %s ORDER BY date",
-            (ticker,),
-        )
-        rows = cur.fetchall()
-        conn.close()
-        if not rows:
-            return None
-        df = pd.DataFrame(rows, columns=["date", "price"])
-        df["date"]  = pd.to_datetime(df["date"])
-        df["price"] = df["price"].astype(float)
-        return df
-    except Exception as exc:
-        LOGGER.debug("DB price load failed for %s: %s", ticker, exc)
-        return None
+# ticker -> (loaded_at, Series(price, index=date) or None when the DB has no rows)
+_cache: "OrderedDict[str, tuple[float, Optional[pd.Series]]]" = OrderedDict()
+_cache_lock = threading.Lock()
 
 
-def _save_to_db(ticker: str, df: pd.DataFrame) -> None:
-    """Upsert a price DataFrame into the PostgreSQL prices table."""
-    if df is None or df.empty:
-        return
-    try:
-        from backend.db import get_connection
-        conn = get_connection()
-        cur  = conn.cursor()
-        cutoff = pd.Timestamp(PRICE_HISTORY_START)
-        rows = []
-        for _, row in df.iterrows():
-            d = row["date"]
-            if pd.Timestamp(d) < cutoff:
-                continue
-            d = d.date() if hasattr(d, "date") else d
-            p = float(row["price"])
-            if p > 0:
-                rows.append((ticker, d, p))
-        if rows:
-            cur.executemany(
-                """
-                INSERT INTO prices (ticker, date, price)
-                VALUES (%s, %s, %s)
-                ON CONFLICT (ticker, date) DO UPDATE SET price = EXCLUDED.price
-                """,
-                rows,
-            )
-        conn.commit()
-        conn.close()
-        LOGGER.debug("Saved %d price rows for %s to DB", len(rows), ticker)
-    except Exception as exc:
-        LOGGER.warning("DB price save failed for %s: %s", ticker, exc)
-
-
-def _get_price_history_start() -> str:
-    """Return the oldest tx_date in the DB as the price history start, fallback to 2012-01-01."""
-    try:
-        from backend.db import get_connection
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT MIN(tx_date) FROM transactions WHERE tx_date IS NOT NULL")
-        row = cur.fetchone()
-        conn.close()
-        if row and row[0]:
-            return row[0].strftime("%Y-%m-%d")
-    except Exception:
-        pass
-    return "2012-01-01"
-
-
-PRICE_HISTORY_START = _get_price_history_start()
-
-
-def _download_from_stooq(ticker: str) -> Optional[pd.DataFrame]:
-    """Download daily prices from Stooq (no local file caching)."""
-    url = f"https://stooq.com/q/d/l/?s={ticker}.US&d1={PRICE_HISTORY_START.replace('-', '')}&i=d"
-    try:
-        df = pd.read_csv(url, timeout=10)
-        if df is None or df.empty or "Date" not in df.columns:
-            return None
-        df["Date"]  = pd.to_datetime(df["Date"],  errors="coerce")
-        df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
-        df = df.dropna(subset=["Date", "Close"]).sort_values("Date").reset_index(drop=True)
-        if df.empty:
-            return None
-        return df[["Date", "Close"]].rename(columns={"Date": "date", "Close": "price"})
-    except Exception as exc:
-        LOGGER.debug("Stooq download failed for %s: %s", ticker, exc)
-        return None
-
-
-def _download_from_yfinance(ticker: str) -> Optional[pd.DataFrame]:
-    """Fallback: download full price history from yfinance (no local file caching)."""
-    try:
-        import yfinance as yf
-        raw = yf.download(ticker, start=PRICE_HISTORY_START, progress=False, auto_adjust=True)
-        if raw is None or raw.empty:
-            return None
-        if isinstance(raw.columns, pd.MultiIndex):
-            raw.columns = raw.columns.get_level_values(0)
-        if "Close" not in raw.columns:
-            return None
-        df = raw[["Close"]].copy()
-        df.index = pd.to_datetime(df.index)
-        df = df.rename(columns={"Close": "price"})
-        df.index.name = "date"
-        df = df.reset_index()
-        df["price"] = pd.to_numeric(df["price"], errors="coerce")
-        df = df[df["price"] > 0].dropna(subset=["date", "price"])
-        df = df.sort_values("date").reset_index(drop=True)
-        if df.empty:
-            return None
-        LOGGER.debug("yfinance fallback succeeded for %s (%d rows)", ticker, len(df))
-        return df
-    except Exception as exc:
-        LOGGER.debug("yfinance fallback failed for %s: %s", ticker, exc)
-        return None
-
-
-@lru_cache(maxsize=1024)
-def _price_series(ticker: str) -> Optional[pd.DataFrame]:
+def _query_prices(tickers: list[str]) -> dict[str, pd.Series]:
     """
-    Return sorted (date, price) DataFrame for ticker.
+    Load the full stored history of `tickers` from the prices table.
 
-    Priority:
-      1. In-memory lru_cache  (free — already returned)
-      2. PostgreSQL prices table  (persists on Render — no pickle needed)
-      3. Local pickle files  (local dev migration path)
-      4. Stooq download
-      5. yfinance fallback  (mutual funds, ETFs, non-US tickers)
-
-    Fresh data is always saved back to the DB so the next cold start is instant.
+    One row per ticker with the dates (as days since 1970-01-01) and prices
+    aggregated into arrays, fetched in binary: ~4x less data from Neon and
+    ~4x faster than one row per (ticker, date).
     """
-    # ── 1. Try DB ────────────────────────────────────────────────────────────
-    df_db = _load_from_db(ticker)
-    if df_db is not None and not df_db.empty:
-        latest     = df_db["date"].max()
-        stale_at   = pd.Timestamp(_dt.date.today() - _dt.timedelta(days=_PRICE_STALE_DAYS))
-        if latest >= stale_at:
-            return df_db          # fresh enough — done
+    out: dict[str, pd.Series] = {}
+    conn = get_connection()
+    try:
+        cur = conn.cursor(binary=True)
+        for i in range(0, len(tickers), _QUERY_CHUNK):
+            cur.execute("""
+                SELECT ticker,
+                       array_agg(date - DATE '1970-01-01' ORDER BY date),
+                       array_agg(price ORDER BY date)
+                FROM prices
+                WHERE ticker = ANY(%s)
+                GROUP BY ticker
+            """, (tickers[i:i + _QUERY_CHUNK],))
+            for ticker, days, prices in cur.fetchall():
+                index = pd.to_datetime(np.asarray(days, dtype="int64"), unit="D")
+                out[ticker] = pd.Series(np.asarray(prices, dtype=float), index=index, name="price")
+    finally:
+        conn.close()
+    return out
 
-    # ── 2. Local pickle (migration: load once, save to DB, never needed again) ──
-    path = _cache_path(ticker)
-    if os.path.exists(path):
-        df_pkl = _df_from_pickle(path)
-        if df_pkl is not None and not df_pkl.empty:
-            _save_to_db(ticker, df_pkl)
-            return df_pkl
 
-    # ── 3. Download from Stooq ───────────────────────────────────────────────
-    time.sleep(0.12)
-    df_fresh = _download_from_stooq(ticker)
+def get_price_series(tickers: Iterable[str]) -> dict[str, pd.Series]:
+    """
+    Return {ticker: Series(price, index=date)} for the requested tickers that have
+    stored prices. Cache misses are loaded from the DB in one go.
+    """
+    wanted = list(dict.fromkeys(t for t in tickers if t))
+    now    = time.time()
+    found: dict[str, pd.Series] = {}
+    missing: list[str] = []
 
-    # ── 4. yfinance fallback ─────────────────────────────────────────────────
-    if df_fresh is None:
-        LOGGER.debug("Stooq returned nothing for %s, trying yfinance…", ticker)
-        df_fresh = _download_from_yfinance(ticker)
+    with _cache_lock:
+        for t in wanted:
+            hit = _cache.get(t)
+            if hit is not None and now - hit[0] < PRICE_CACHE_TTL:
+                _cache.move_to_end(t)
+                if hit[1] is not None:
+                    found[t] = hit[1]
+            else:
+                missing.append(t)
 
-    if df_fresh is not None:
-        _save_to_db(ticker, df_fresh)
-        return df_fresh
+    if missing:
+        loaded = _query_prices(missing)
+        with _cache_lock:
+            for t in missing:
+                series = loaded.get(t)
+                _cache[t] = (now, series)
+                _cache.move_to_end(t)
+                if series is not None:
+                    found[t] = series
+            while len(_cache) > PRICE_CACHE_MAX_TICKERS:
+                _cache.popitem(last=False)
 
-    # ── 5. Return stale DB data rather than nothing ──────────────────────────
-    return df_db
+    return found
+
+
+def _on_or_after(series: Optional[pd.Series], date) -> Optional[float]:
+    """First available close price on or after `date`."""
+    if series is None:
+        return None
+    i = series.index.searchsorted(pd.to_datetime(date), side="left")
+    return float(series.iloc[i]) if i < len(series) else None
+
+
+def _on_or_before(series: Optional[pd.Series], date) -> Optional[float]:
+    """Last available close price on or before `date`."""
+    if series is None:
+        return None
+    i = series.index.searchsorted(pd.to_datetime(date), side="right") - 1
+    return float(series.iloc[i]) if i >= 0 else None
 
 
 def price_on_or_after(ticker: str, date) -> Optional[float]:
     """First available close price on or after `date`. Returns None if unavailable."""
-    df = _price_series(ticker)
-    if df is None:
-        return None
-    date = pd.to_datetime(date)
-    rows = df[df["date"] >= date]
-    return float(rows["price"].iloc[0]) if not rows.empty else None
+    return _on_or_after(get_price_series([ticker]).get(ticker), date)
 
 
 def price_on_or_before(ticker: str, date) -> Optional[float]:
     """Last available close price on or before `date`."""
-    df = _price_series(ticker)
-    if df is None:
-        return None
-    date = pd.to_datetime(date)
-    rows = df[df["date"] <= date]
-    return float(rows["price"].iloc[-1]) if not rows.empty else None
+    return _on_or_before(get_price_series([ticker]).get(ticker), date)
 
 
 # ── portfolio helpers ──────────────────────────────────────────────────────────
@@ -280,15 +170,19 @@ def _same_bucket(a: float, b: float) -> bool:
     return False
 
 
-def _portfolio_value(holdings: dict, date) -> float:
+def _portfolio_value(holdings: dict, date, prices: dict) -> float:
     total = 0.0
     for ticker, units in holdings.items():
         if units <= 0:
             continue
-        p = price_on_or_after(ticker, date)
+        p = _on_or_after(prices.get(ticker), date)
         if p and p > 0:
             total += p * units
     return total
+
+
+def _tickers_in(rows: pd.DataFrame) -> set:
+    return {str(t).strip().upper() for t in rows.get("ticker", [])} | {"SPY"}
 
 
 # ── main simulation ────────────────────────────────────────────────────────────
@@ -319,6 +213,7 @@ def simulate_portfolio(rows: pd.DataFrame) -> dict:
         return ""
 
     rows["_side"] = rows.apply(_side, axis=1)
+    prices = get_price_series(_tickers_in(rows))
 
     holdings: dict = defaultdict(float)
     before_vals, after_vals, tx_dates = [], [], []
@@ -332,11 +227,11 @@ def simulate_portfolio(rows: pd.DataFrame) -> dict:
         if not ticker or side not in ("BUY", "SELL"):
             continue
 
-        price = price_on_or_after(ticker, date)
+        price = _on_or_after(prices.get(ticker), date)
         if price is None or price <= 0:
             continue
 
-        val_before = _portfolio_value(holdings, date)
+        val_before = _portfolio_value(holdings, date, prices)
 
         if side == "BUY":
             if tx_est > 0:
@@ -351,7 +246,7 @@ def simulate_portfolio(rows: pd.DataFrame) -> dict:
                 else:
                     holdings[ticker] = max(0.0, held - tx_est / price)
 
-        val_after = _portfolio_value(holdings, date)
+        val_after = _portfolio_value(holdings, date, prices)
         before_vals.append(val_before)
         after_vals.append(val_after)
         tx_dates.append(date)
@@ -377,8 +272,7 @@ def simulate_portfolio(rows: pd.DataFrame) -> dict:
     cagr         = float(total_return ** (1 / years))
 
     # SPY comparison — normalize to 1.0 at start_date
-    spy_df = _price_series("SPY")
-    spy_growth, spy_total_return = _spy_series(spy_df, td, start_date, end_date)
+    spy_growth, spy_total_return = _spy_series(prices.get("SPY"), td, start_date, end_date)
 
     return {
         "dates":            [d.strftime("%Y-%m-%d") for d in td],
@@ -398,7 +292,7 @@ def simulate_portfolio_daily(rows: pd.DataFrame) -> dict:
     """
     Like simulate_portfolio but returns a dense DAILY growth series.
     Tracks holdings state after each transaction, then for every business
-    day computes portfolio value = sum(units * daily_price) using Stooq data.
+    day computes portfolio value = sum(units * daily_price) using stored prices.
     """
     import bisect
     from collections import defaultdict
@@ -419,6 +313,7 @@ def simulate_portfolio_daily(rows: pd.DataFrame) -> dict:
         return ""
 
     rows["_side"] = rows.apply(_side, axis=1)
+    prices = get_price_series(_tickers_in(rows))
 
     # ── replay transactions; capture holdings snapshot after each tx ────────
     holdings: dict = defaultdict(float)
@@ -433,7 +328,7 @@ def simulate_portfolio_daily(rows: pd.DataFrame) -> dict:
         if not ticker or side not in ("BUY", "SELL"):
             continue
 
-        price = price_on_or_after(ticker, date)
+        price = _on_or_after(prices.get(ticker), date)
         if price is None or price <= 0:
             continue
 
@@ -473,10 +368,8 @@ def simulate_portfolio_daily(rows: pd.DataFrame) -> dict:
 
     price_series_map: dict = {}
     for ticker in unique_tickers:
-        ps = _price_series(ticker)
-        if ps is not None:
-            s = ps.set_index("date")["price"]
-            s.index = pd.to_datetime(s.index)
+        s = prices.get(ticker)
+        if s is not None:
             price_series_map[ticker] = s.reindex(daily_dates, method="ffill")
 
     # ── pre-extract price arrays for fast indexing ───────────────────────────
@@ -552,13 +445,11 @@ def simulate_portfolio_daily(rows: pd.DataFrame) -> dict:
     growth      = np.array(growth_list, dtype=float)
 
     # ── SPY daily series ─────────────────────────────────────────────────────
-    spy_df = _price_series("SPY")
+    spy = prices.get("SPY")
     spy_growth = []
     spy_total  = 1.0
-    if spy_df is not None:
-        s = spy_df.set_index("date")["price"]
-        s.index = pd.to_datetime(s.index)
-        spy_daily = s.reindex(daily_dates, method="ffill")
+    if spy is not None:
+        spy_daily = spy.reindex(daily_dates, method="ffill")
         spy_base  = spy_daily.iloc[0]
         if pd.notna(spy_base) and spy_base > 0:
             spy_series_norm = (spy_daily / spy_base).fillna(1.0)
@@ -583,31 +474,30 @@ def simulate_portfolio_daily(rows: pd.DataFrame) -> dict:
     }
 
 
-def _spy_series(spy_df, tx_dates: list, start_date, end_date) -> tuple:
+def _spy_series(spy: Optional[pd.Series], tx_dates: list, start_date, end_date) -> tuple:
     """Return (spy_growth_list, spy_total_return) aligned to tx_dates."""
-    if spy_df is None or len(tx_dates) == 0:
+    if spy is None or len(tx_dates) == 0:
         return [], 1.0
 
-    spy_sub = spy_df[
-        (spy_df["date"] >= pd.to_datetime(start_date)) &
-        (spy_df["date"] <= pd.to_datetime(end_date))
-    ].sort_values("date")
+    spy_sub = spy[
+        (spy.index >= pd.to_datetime(start_date)) &
+        (spy.index <= pd.to_datetime(end_date))
+    ]
 
     if len(spy_sub) < 2:
         return [], 1.0
 
-    base_price = float(spy_sub["price"].iloc[0])
+    base_price = float(spy_sub.iloc[0])
     if base_price <= 0:
         return [], 1.0
 
     # For each transaction date, find SPY price (last available on or before)
     interp = []
     for d in tx_dates:
-        row = spy_sub[spy_sub["date"] <= pd.to_datetime(d)]
-        p   = float(row["price"].iloc[-1]) if not row.empty else base_price
-        interp.append(p / base_price)
+        p = _on_or_before(spy_sub, d)
+        interp.append((p if p is not None else base_price) / base_price)
 
-    spy_total = float(spy_sub["price"].iloc[-1]) / base_price
+    spy_total = float(spy_sub.iloc[-1]) / base_price
     return [round(v, 6) for v in interp], round(spy_total, 4)
 
 

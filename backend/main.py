@@ -2,7 +2,9 @@ import datetime as _dt
 import logging
 import os
 import re as _re
+import threading
 import time
+from collections import OrderedDict
 from contextlib import asynccontextmanager
 from typing import Optional, List
 import anthropic
@@ -14,7 +16,8 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Query, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse, Response
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -60,55 +63,60 @@ def _norm_key(name: str) -> tuple:
 def _name_variants(person: str, conn) -> list[str]:
     """Return all DB name variants that share the same (first, last) token key."""
     key = _norm_key(person)
-    cur = conn.cursor()
-    cur.execute("SELECT DISTINCT full_name FROM transactions")
-    return [r[0] for r in cur.fetchall() if _norm_key(r[0]) == key] or [person]
+    names = _cache_get("all_names")
+    if names is None:
+        cur = conn.cursor()
+        cur.execute("SELECT DISTINCT full_name FROM transactions")
+        names = [r[0] for r in cur.fetchall()]
+        _cache_set("all_names", names, 600)  # 10-minute TTL
+    return [n for n in names if _norm_key(n) == key] or [person]
 
-# ── price cache (in-process, ~1 h TTL) ────────────────────────────────────────
-_price_cache: dict = {}
-_price_ts:    dict = {}
-PRICE_TTL = 3600  # seconds
+
+# ── simple TTL cache (per process, bounded) ───────────────────────────────────
+CACHE_MAX_ENTRIES = int(os.getenv("CACHE_MAX_ENTRIES", 300))
+_ttl_cache: "OrderedDict[str, tuple]" = OrderedDict()   # key -> (value, expires_at)
+_ttl_lock = threading.Lock()
 
 
-def _fetch_prices(tickers: list[str]) -> dict[str, Optional[float]]:
-    """Fetch latest close prices from yfinance with a simple in-memory cache."""
-    now  = time.time()
-    result: dict[str, Optional[float]] = {}
-    stale = [t for t in tickers if now - _price_ts.get(t, 0) > PRICE_TTL]
-    fresh = [t for t in tickers if t not in stale]
+def _cache_get(key: str):
+    with _ttl_lock:
+        entry = _ttl_cache.get(key)
+        if entry and time.time() < entry[1]:
+            _ttl_cache.move_to_end(key)
+            return entry[0]
+    return None
 
-    for t in fresh:
-        result[t] = _price_cache.get(t)
 
-    if stale:
-        try:
-            import yfinance as yf
-            if len(stale) == 1:
-                data = yf.download(stale[0], period="5d", progress=False)
-                col  = "Close"
-                if not data.empty and col in data.columns:
-                    price = float(data[col].dropna().iloc[-1])
-                    _price_cache[stale[0]] = price
-                    _price_ts[stale[0]]    = now
-                    result[stale[0]]       = price
-                else:
-                    result[stale[0]] = None
-            else:
-                data = yf.download(stale, period="5d", progress=False, group_by="ticker")
-                for t in stale:
-                    try:
-                        price = float(data[t]["Close"].dropna().iloc[-1])
-                        _price_cache[t] = price
-                        _price_ts[t]    = now
-                        result[t]       = price
-                    except Exception:
-                        result[t] = None
-        except Exception as exc:
-            LOGGER.warning("yfinance error: %s", exc)
-            for t in stale:
-                result[t] = None
+def _cache_set(key: str, value, ttl: int):
+    with _ttl_lock:
+        _ttl_cache[key] = (value, time.time() + ttl)
+        _ttl_cache.move_to_end(key)
+        while len(_ttl_cache) > CACHE_MAX_ENTRIES:
+            _ttl_cache.popitem(last=False)
 
-    return result
+
+# ── latest stored prices ──────────────────────────────────────────────────────
+
+def _latest_prices(tickers: list[str]) -> dict[str, float]:
+    """Latest stored close per ticker (the prices table is filled by crons/refresh_prices.py)."""
+    if not tickers:
+        return {}
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT t.ticker, p.price
+            FROM unnest(%s::text[]) AS t(ticker)
+            CROSS JOIN LATERAL (
+                SELECT price FROM prices
+                WHERE prices.ticker = t.ticker
+                ORDER BY date DESC
+                LIMIT 1
+            ) p
+        """, (tickers,))
+        return {t: float(p) for t, p in cur.fetchall()}
+    finally:
+        conn.close()
 
 
 # ── FastAPI app ────────────────────────────────────────────────────────────────
@@ -212,7 +220,28 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Congress Stock Trades API", lifespan=lifespan)
 
-limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
+
+# ── client IP / rate limiting ─────────────────────────────────────────────────
+
+def _client_ip(request: Request) -> str:
+    """
+    Real client IP. Render's edge is Cloudflare, so request.client.host is a proxy
+    address shared by every visitor.
+      1. CF-Connecting-IP — set by Cloudflare at the edge; clients cannot forge it there.
+      2. X-Forwarded-For  — first entry. Render appends to this header instead of
+                            resetting it, so it can be spoofed: fallback only.
+      3. request.client.host
+    """
+    ip = request.headers.get("cf-connecting-ip", "").strip()
+    if not ip:
+        ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    return ip or get_remote_address(request)
+
+
+_BLOCKED_IPS = {ip.strip() for ip in os.getenv("BLOCKED_IPS", "").split(",") if ip.strip()}
+_LOG_CLIENT_IP_HEADERS = os.getenv("LOG_CLIENT_IP_HEADERS") == "1"
+
+limiter = Limiter(key_func=_client_ip, default_limits=["120/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -240,19 +269,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── simple TTL cache ──────────────────────────────────────────────────────────
-_ttl_cache: dict = {}   # key -> (value, expires_at)
+
+@app.middleware("http")
+async def _block_ips(request: Request, call_next):
+    """Reject IPs listed in BLOCKED_IPS; optionally log the proxy headers (LOG_CLIENT_IP_HEADERS=1)."""
+    if _LOG_CLIENT_IP_HEADERS:
+        LOGGER.warning(
+            "client-ip headers: cf-connecting-ip=%r x-forwarded-for=%r peer=%r -> key=%r",
+            request.headers.get("cf-connecting-ip"), request.headers.get("x-forwarded-for"),
+            request.client.host if request.client else None, _client_ip(request),
+        )
+    if _BLOCKED_IPS and _client_ip(request) in _BLOCKED_IPS:
+        return JSONResponse(status_code=403, content={"detail": "Forbidden"})
+    return await call_next(request)
 
 
-def _cache_get(key: str):
-    entry = _ttl_cache.get(key)
-    if entry and time.time() < entry[1]:
-        return entry[0]
-    return None
-
-
-def _cache_set(key: str, value, ttl: int):
-    _ttl_cache[key] = (value, time.time() + ttl)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 # ── allow-lists for query validation ──────────────────────────────────────────
@@ -266,7 +298,7 @@ ALLOWED_CHAMBER = {"Senate", "House"}
 # ── /transactions ─────────────────────────────────────────────────────────────
 
 @app.get("/transactions")
-@limiter.limit("30/minute")
+@limiter.limit("30/minute;600/hour")
 def get_transactions(
     request: Request,
     senator: str | None = Query(default=None, max_length=200),
@@ -322,7 +354,9 @@ def get_transactions(
 # ── /transactions/count ───────────────────────────────────────────────────────
 
 @app.get("/transactions/count")
+@limiter.limit("30/minute")
 def count_transactions(
+    request: Request,
     senator: str | None = Query(default=None, max_length=200),
     side:    str | None = Query(default=None, max_length=10),
     ticker:  str | None = Query(default=None, max_length=20),
@@ -570,7 +604,7 @@ def monthly_timeseries(
 # ── /portfolio ────────────────────────────────────────────────────────────────
 
 @app.get("/portfolio")
-@limiter.limit("20/minute")
+@limiter.limit("20/minute;200/hour")
 def get_portfolio(
     request: Request,
     person: str = Query(..., min_length=1, max_length=200),
@@ -580,7 +614,7 @@ def get_portfolio(
     Portfolio summary for a single member.
 
     Returns per-ticker aggregates: total estimated buys, sells, trade counts,
-    last transaction date. Optionally fetches current market prices via yfinance.
+    last transaction date. Optionally adds the latest stored close price.
     """
     conn = get_connection()
     try:
@@ -638,10 +672,10 @@ def get_portfolio(
 
     positions.sort(key=lambda x: x["total_bought"], reverse=True)
 
-    # Optionally fetch live prices
+    # Optionally add the latest stored close
     if fetch_prices:
         tickers_to_price = [p["ticker"] for p in positions]
-        prices = _fetch_prices(tickers_to_price)
+        prices = _latest_prices(tickers_to_price)
         for p in positions:
             p["current_price"] = prices.get(p["ticker"])
 
@@ -659,14 +693,17 @@ def get_portfolio(
 
 # ── /portfolio/performance ────────────────────────────────────────────────────
 
+PERF_CACHE_TTL = int(os.getenv("PERF_CACHE_TTL", 6 * 3600))  # seconds
+
+
 @app.get("/portfolio/performance")
-@limiter.limit("10/minute")
+@limiter.limit("6/minute;60/hour")
 def portfolio_performance(request: Request, person: str = Query(..., min_length=1, max_length=200)):
     """
     Simulate a member's portfolio growth over time and compare against SPY.
 
-    Uses the Stooq price cache in Scraping/notebooks/stocks/ (same as the
-    Jupyter notebook). For uncached tickers it downloads from Stooq live.
+    Prices come only from the `prices` table (never downloaded during a request);
+    the serialized response is cached per person for PERF_CACHE_TTL seconds.
 
     Returns cumulative-growth time series aligned to the member's transaction
     dates, plus SPY normalised to the same start date.
@@ -677,7 +714,7 @@ def portfolio_performance(request: Request, person: str = Query(..., min_length=
     cache_key = f"perf:{person.lower()}"
     cached = _cache_get(cache_key)
     if cached is not None:
-        return cached
+        return Response(content=cached, media_type="application/json")
 
     conn = get_connection()
     try:
@@ -726,8 +763,10 @@ def portfolio_performance(request: Request, person: str = Query(..., min_length=
         "disclosure_total_return": perf_disc["total_return"],
         "disclosure_cagr":         perf_disc["cagr"],
     }
-    _cache_set(cache_key, result, 1800)  # 30-minute TTL
-    return result
+    # Cache the serialized body (same bytes FastAPI would send, far less RAM than the dict)
+    body = JSONResponse(content=result).body
+    _cache_set(cache_key, body, PERF_CACHE_TTL)
+    return Response(content=body, media_type="application/json")
 
 
 # ── /leaderboard ──────────────────────────────────────────────────────────────
